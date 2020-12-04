@@ -13,11 +13,53 @@ likertNum <- function(x){
         )
 }
 
-#load data
-df <- read_excel("xx.xls")
-df <- df %>% rownames_to_column("ID")  
-df <- df %>% gather(`Rank (Q70):`Hexidecimal (Q69)`, key= "Question", value = "Response" ) %>%
-separate(col = `Question`, into=c("Question", "Question2"), sep = " ", remove="TRUE")%>%separate(col= `Q#`, into=c("Question#", "Short Title"), sep = "\\.", remove="TRUE")
+#load raw data and pre-process
+df_raw <- read_xlsx("CyberCompetencies.xlsx") %>% 
+        drop_na(`Work_Role (Q50)`) %>% 
+        rownames_to_column("ID") %>% 
+        select(-`Record ID`) %>% 
+        rename ("OSCP" = "FormalCerts (Q58_1)",
+                "xx" ='FormalCerts (Q58_2)',
+                "GPEN" = 'FormalCerts (Q58_3)',
+                "GXPN" = 'FormalCerts (Q58_4)',
+                "GCIH" ='FormalCerts (Q58_5)',
+                "CEH" = 'FormalCerts (Q58_6)',
+                "CISSP" ="FormalCerts (Q58_7)",
+                "yy" = "FormalCerts (Q58_8)",
+                "Security+"="FormalCerts (Q58_9)",
+                "OtherCert" ="FormalCerts (Q58_10)") %>% 
+        mutate(Duration_min = round((Completed - Started),2)) %>% 
+        mutate(Complete = if_else(Duration_min >0, "Yes", "No"))
+
+
+df_preprocess <- df_raw %>% 
+        gather(`Rank (Q70)`:`Hexidecimal (Q69)`, key= "Question", value = "Response" ) %>%
+        separate(col = `Question`, into=c("Question", "Question2"),  sep = " ", remove="TRUE") %>% 
+        select (-Question2) %>% 
+        pivot_wider(names_from = Question, values_from = Response) %>% 
+        gather(`1_ProblemSolver (Q1_A_1)`: `21_ToleranceOfAmbiguity (Q21_A_16)`, key="Question", value = "Response") %>% 
+        separate(col = `Question`, into=c("Question2", "Question"),  sep = "[(]", remove="TRUE") %>% 
+        select(-Question2) 
+
+df_preprocess$Question <- gsub("[)]", "", df_preprocess$Question)
+
+
+df_preprocess2 <- df_preprocess %>% pivot_wider(names_from = Question, values_from = Response) %>% 
+        gather(`Pattern_Q1 (Q23)`:`3D_Q16 (Q47)`, key= "Question", value = "Response" ) %>% 
+        separate(col = `Question`, into=c("Question", "Question2"),  sep = " ", remove="TRUE") %>% 
+        select(-Question2) %>% pivot_wider(names_from = Question, values_from = Response) %>%
+        select(ID, Rank:`3D_Q16`, Duration_min)
+        
+#plot of duation to complete
+median <- median(df_preprocess2$Duration_min, na.rm=TRUE)
+df_preprocess2 %>% ggplot() + geom_density(aes(x=Duration_min), fill="skyblue") +
+        geom_vline(xintercept = median, linetype="dashed", color="red") + ylab("") +
+        geom_text(aes(x=median, y=0), label=round(median,1)) +
+        xlab("questionnaire duration (min) *median value labeled")
+
+########################################### Working Line - Under Construction #################3
+#Scoring of Raw Data         
+
 
 cogntive <- 88:94
 df[cogntive] <- lapply(df[cogntive], as.factor) 
@@ -34,6 +76,7 @@ df_scored <- df %>%
         Verbal_Q16 = if_else(Verbal_Q16==4, 1, 0),
         Matrix_Q55 = if_else(Matrix_Q55==4, 1, 0) )
         
+
 #Rasch scoring cognitive questions
 df_cognitive <- df_scores %>% select(ID, Pattern_Q1:3D_Q16) %>% column_to_rownames("ID") 
 rm.res <- RM(df_cognitive)

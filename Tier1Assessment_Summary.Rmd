@@ -1,0 +1,35 @@
+---
+title: "Tier 1 Cyber Assessment - Summary"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(DT)
+
+summary <- df_preprocess2 %>% summarySE(measurevar = "Duration_min", groupvars = c("Work_Role", "Complete" )) %>%
+  select(Work_Role, Complete, N) %>% 
+  pivot_wider(names_from = "Complete", values_from = "N") %>%  
+  mutate(Yes=replace_na(Yes, 0)) 
+```
+
+## Completion Statistics by Work Role
+
+
+```{r completion_stats}
+datatable(summary)
+```
+
+## Completion Time Duration
+
+
+```{r duration_plot, echo=FALSE}
+#plot of duation to complete
+median <- median(df_preprocess2$Duration_min, na.rm=TRUE)
+df_preprocess2 %>% ggplot() + geom_density(aes(x=Duration_min), fill="skyblue") +
+        geom_vline(xintercept = median, linetype="dashed", color="red") + ylab("") +
+        geom_text(aes(x=median, y=0), label=round(median,1)) +
+        xlab("questionnaire duration (min) *median value labeled")
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
