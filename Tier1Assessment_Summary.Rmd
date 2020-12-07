@@ -1,35 +1,77 @@
 ---
 title: "Tier 1 Cyber Assessment - Summary"
 output: github_document
+always_allow_html: true
 ---
 
 ```{r setup, include=FALSE}
-library(DT)
+library(tidyverse)
+library(readxl)
+library(Rmisc)
+library(kableExtra)
+
+
+#load raw data and pre-process
+df_raw <- read_xlsx("CyberCompetencies.xlsx") %>% 
+        drop_na(`Work_Role (Q50)`) %>% 
+        rownames_to_column("ID") %>% 
+        select(-`Record ID`) %>% 
+        dplyr::rename(OSCP=`FormalCerts (Q58_1)`,
+                `xx`        = `FormalCerts (Q58_2)`,
+                `GPEN`      = `FormalCerts (Q58_3)`,
+                `GXPN`      = `FormalCerts (Q58_4)`,
+                `GCIH`      = `FormalCerts (Q58_5)`,
+                `CEH`       = `FormalCerts (Q58_6)`,
+                `CISSP`     = `FormalCerts (Q58_7)`,
+                `yy`        = `FormalCerts (Q58_8)`,
+                `Security+` = `FormalCerts (Q58_9)`,
+                `OtherCert` = `FormalCerts (Q58_10)`) %>% 
+        mutate(Duration_min = round((Completed - Started),2)) %>%
+        mutate(Duration_min=replace_na(Duration_min, 0)) %>% 
+        mutate(Complete = if_else(Duration_min >0, "Yes", "No"))
+
+
+df_preprocess <- df_raw %>% 
+        gather(`Rank (Q70)`:`Hexidecimal (Q69)`, key= "Question", value = "Response" ) %>%
+        separate(col = `Question`, into=c("Question", "Question2"),  sep = " ", remove="TRUE") %>% 
+        select (-Question2) %>% 
+        pivot_wider(names_from = Question, values_from = Response) %>% 
+        gather(`1_ProblemSolver (Q1_A_1)`: `21_ToleranceOfAmbiguity (Q21_A_16)`, key="Question", value = "Response") %>% 
+        separate(col = `Question`, into=c("Question2", "Question"),  sep = "[(]", remove="TRUE") %>% 
+        select(-Question2) 
+
+df_preprocess$Question <- gsub("[)]", "", df_preprocess$Question)
+
+
+df_preprocess2 <- df_preprocess %>% pivot_wider(names_from = Question, values_from = Response) %>% 
+        gather(`Pattern_Q1 (Q23)`:`3D_Q16 (Q47)`, key= "Question", value = "Response" ) %>% 
+        separate(col = `Question`, into=c("Question", "Question2"),  sep = " ", remove="TRUE") %>% 
+        select(-Question2) %>% pivot_wider(names_from = Question, values_from = Response) %>%
+        select(ID, Rank:`3D_Q16`, Complete, Duration_min)
 
 summary <- df_preprocess2 %>% summarySE(measurevar = "Duration_min", groupvars = c("Work_Role", "Complete" )) %>%
   select(Work_Role, Complete, N) %>% 
   pivot_wider(names_from = "Complete", values_from = "N") %>%  
-  mutate(Yes=replace_na(Yes, 0)) 
+  mutate(Yes=replace_na(Yes, 0)) %>% 
+  dplyr::rename (Complete = `Yes`, Partial = `No`) %>% 
+  mutate (Total = (Complete+Partial)) %>% 
+  arrange(Total)
 ```
 
-## Completion Statistics by Work Role
+## Questionnaire Completion Totals
 
-
-```{r completion_stats}
-datatable(summary)
+```{r completion_stats, echo=FALSE, message=FALSE, warning=FALSE}
+summary %>% kable %>% kable_styling (bootstrap_options = c("striped", "hover", "condensed"), fixed_thead = T)
 ```
 
-## Completion Time Duration
+## Completion Duration (minutes)
 
-
-```{r duration_plot, echo=FALSE}
+```{r duration_plot, echo=FALSE, message=FALSE, warning=FALSE}
 #plot of duation to complete
-median <- median(df_preprocess2$Duration_min, na.rm=TRUE)
-df_preprocess2 %>% ggplot() + geom_density(aes(x=Duration_min), fill="skyblue") +
+df_median <- df_preprocess2 %>% filter(Duration_min>0)
+median <- median(df_median$Duration_min)
+df_preprocess2 %>% filter(Duration_min>0) %>% ggplot() + geom_density(aes(x=Duration_min), fill="skyblue") +
         geom_vline(xintercept = median, linetype="dashed", color="red") + ylab("") +
         geom_text(aes(x=median, y=0), label=round(median,1)) +
-        xlab("questionnaire duration (min) *median value labeled")
-
+        xlab("Questionnaire Duration (min)  *median labeled") + xlim(0,125)
 ```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
