@@ -1,6 +1,7 @@
 #load libraries
 library(tidyverse)
 library(readxl)
+library(Rmisc)
 
 #functions
 likertNum <- function(x){
@@ -18,17 +19,18 @@ df_raw <- read_xlsx("CyberCompetencies.xlsx") %>%
         drop_na(`Work_Role (Q50)`) %>% 
         rownames_to_column("ID") %>% 
         select(-`Record ID`) %>% 
-        rename ("OSCP" = "FormalCerts (Q58_1)",
-                "xx" ='FormalCerts (Q58_2)',
-                "GPEN" = 'FormalCerts (Q58_3)',
-                "GXPN" = 'FormalCerts (Q58_4)',
-                "GCIH" ='FormalCerts (Q58_5)',
-                "CEH" = 'FormalCerts (Q58_6)',
-                "CISSP" ="FormalCerts (Q58_7)",
-                "yy" = "FormalCerts (Q58_8)",
-                "Security+"="FormalCerts (Q58_9)",
-                "OtherCert" ="FormalCerts (Q58_10)") %>% 
-        mutate(Duration_min = round((Completed - Started),2)) %>% 
+        dplyr::rename(OSCP=`FormalCerts (Q58_1)`,
+                `xx`        = `FormalCerts (Q58_2)`,
+                `GPEN`      = `FormalCerts (Q58_3)`,
+                `GXPN`      = `FormalCerts (Q58_4)`,
+                `GCIH`      = `FormalCerts (Q58_5)`,
+                `CEH`       = `FormalCerts (Q58_6)`,
+                `CISSP`     = `FormalCerts (Q58_7)`,
+                `yy`        = `FormalCerts (Q58_8)`,
+                `Security+` = `FormalCerts (Q58_9)`,
+                `OtherCert` = `FormalCerts (Q58_10)`) %>% 
+        mutate(Duration_min = round((Completed - Started),2)) %>%
+        mutate(Duration_min=replace_na(Duration_min, 0)) %>% 
         mutate(Complete = if_else(Duration_min >0, "Yes", "No"))
 
 
@@ -48,14 +50,8 @@ df_preprocess2 <- df_preprocess %>% pivot_wider(names_from = Question, values_fr
         gather(`Pattern_Q1 (Q23)`:`3D_Q16 (Q47)`, key= "Question", value = "Response" ) %>% 
         separate(col = `Question`, into=c("Question", "Question2"),  sep = " ", remove="TRUE") %>% 
         select(-Question2) %>% pivot_wider(names_from = Question, values_from = Response) %>%
-        select(ID, Rank:`3D_Q16`, Duration_min)
+        select(ID, Rank:`3D_Q16`, Complete, Duration_min)
         
-#plot of duation to complete
-median <- median(df_preprocess2$Duration_min, na.rm=TRUE)
-df_preprocess2 %>% ggplot() + geom_density(aes(x=Duration_min), fill="skyblue") +
-        geom_vline(xintercept = median, linetype="dashed", color="red") + ylab("") +
-        geom_text(aes(x=median, y=0), label=round(median,1)) +
-        xlab("questionnaire duration (min) *median value labeled")
 
 ########################################### Working Line - Under Construction #################3
 #Scoring of Raw Data         
