@@ -70,11 +70,11 @@ df_preprocess <- read_xlsx(file) %>%
         mutate(Duration_min = replace_na(Duration_min, 0)) %>%  
         left_join(df_mis_P) %>% #join in missingness stat for Personality features
         left_join(df_mis_C) %>% #join in missingness stat for Cognitive features
-        drop_na(Work_Role) %>% 
-        arrange(Work_Role) %>% 
-        rownames_to_column("ID") %>%
-        select(-`Record ID`) %>% 
-        select(ID, Rank:`3D_Q16`, Pers_Miss, Cog_Miss, Duration_min)
+        drop_na(Work_Role) %>% #drop rows with no data based on entry to work role
+        arrange(Work_Role) %>% #arrange data by work role
+        rownames_to_column("ID") %>% #add a new ID label beginning with 1
+        select(-`Record ID`) %>% #remove Verint ID label
+        select(ID, Rank:`3D_Q16`, Pers_Miss, Cog_Miss, Duration_min) #select features to carry forward in analysis
 
 #Replace Work roles with simple categories
 df_preprocess$Work_Role <-  gsub("Tier-1 - Remote Operator|Tier-1 - Capability Developer|Tier-1 - Exploitation Analyst", "Tier_1", df_preprocess$Work_Role)
@@ -82,12 +82,13 @@ df_preprocess$Work_Role <-  gsub("Tier 2- Data Architect, Network Analyst, Syste
 df_preprocess$Work_Role <-  gsub("Tier 3- Other work role directly assigned to a Cyber Mission Force Team", "Tier_3", df_preprocess$Work_Role)
 df_preprocess$Work_Role <-  gsub("Tier 4 -  Other authorized cyber work role|I am currently not assigned a cyber work role or I am assigned as a student", "Tier_4", df_preprocess$Work_Role)
 
+#plot a missmap of raw data
 missmap(df_preprocess %>% select(ID: `3D_Q16`, Duration_min) %>% arrange(Duration_min), rank.order=FALSE, main = "Missing values vs observed")
 
 df_rawscore <- df_preprocess %>%   
-        mutate_at(vars(`Q1_A_1` : `Q21_A_16`), likertNum) %>% 
+        mutate_at(vars(`Q1_A_1` : `Q21_A_16`), likertNum) %>% #score likert items
         mutate(
-        `3D_Q16` = if_else(`3D_Q16` =="E", 1, 0),
+        `3D_Q16` = if_else(`3D_Q16` =="E", 1, 0), #score cognitive questions according to scoring key from ICAR
         `3D_Q24` = if_else(`3D_Q24` == "C", 1, 0),
         `3D_Q29` = if_else(`3D_Q29` == "F", 1, 0),
         `3D_Q42` = if_else(`3D_Q42` == "F", 1, 0),
@@ -116,22 +117,21 @@ df_rawscore <- df_preprocess %>%
 #Reverse Scores for select column 
 df_rawscore2 <- df_rawscore
 columnsToReverse <-  c('Q10_A_16','Q10_A_17','Q10_A_18','Q10_A_19','Q10_A_20', 'Q18_A_2', 'Q18_A_4', 'Q18_A_6', 'Q22_A_7', 'Q22_A_8', 'Q22_A_9', 'Q22_A_10', 'Q21_A_1', 'Q21_A_3','Q21_A_5','Q21_A_7','Q21_A_9', 'Q21_A_11', 'Q21_A_13', 'Q21_A_15') 
- 
-df_rawscore2[,columnsToReverse] <- 6-df_rawscore2[, columnsToReverse] 
+df_rawscore2[,columnsToReverse] <- 6-df_rawscore2[, columnsToReverse]  #reverse scoring requires subtracting from number 6 (one more than max score of 5)
 
-#Imputation Code     
-df_rawscore2_a <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_1" ) ) %>% 
-        mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) %>% 
-        mutate_at(vars(Pattern_Q1:`3D_Q16`),~ifelse(is.na(.x), 0, .x))
+#Imputation of mean values for personality items by work role   
+df_rawscore2_a <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_1" ) ) %>% #Tier 1 group
+        mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) %>% #personality items
+        mutate_at(vars(Pattern_Q1:`3D_Q16`),~ifelse(is.na(.x), 0, .x)) #impute zeros for missing cognitive items
     
-df_rawscore2_b <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_2", "Tier_3", "Tier_4"))  %>% 
-        mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) %>% 
-        mutate_at(vars(Pattern_Q1:`3D_Q16`),~ifelse(is.na(.x), 0, .x)) 
+df_rawscore2_b <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_2", "Tier_3", "Tier_4"))  %>% #Tier 2, 3, & 4 group
+        mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) %>% #personality items
+        mutate_at(vars(Pattern_Q1:`3D_Q16`),~ifelse(is.na(.x), 0, .x)) #impute zeros for missing cognitive items
 
 
-df_rawscore3 <- rbind(df_rawscore2_a, df_rawscore2_b)
+df_rawscore3 <- rbind(df_rawscore2_a, df_rawscore2_b) #bind together the Tier 1 and the Tier 2/3/4 dataframes
 
-#Rasch scoring cognitive questions
+#Rasch scoring 25 cognitive questions
 df_Rasch <- df_rawscore3 %>% filter(Cog_Miss<miss_limit) %>% select(ID, Pattern_Q1:`3D_Q16`) %>% 
         column_to_rownames("ID") 
 
