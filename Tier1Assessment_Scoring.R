@@ -141,7 +141,7 @@ df_Rasch2 <-  pp$theta.table %>%
         rownames_to_column("ID") %>% 
         mutate(Proficiency=round(`Person Parameter`, 2)) %>%  select(ID, Proficiency) 
 
-#Scoring Personality Dimensions and Cognitive Test and normalize to 1
+#Scoring Personality Dimensions and Cognitive Test Types; normalize all scales to 1
 df_scored <- df_rawscore3 %>% 
         group_by (ID) %>% 
         mutate(
@@ -178,9 +178,10 @@ df_scored <- df_rawscore3 %>%
         ThreeD = sum(`3D_Q16`, `3D_Q24`, `3D_Q29`, `3D_Q42`, `3D_Q58`)/5,
         Verbal = sum(Verbal_Q14, Verbal_Q16, Verbal_Q17, Verbal_Q32, Verbal_Q4)/5 ) %>% 
         mutate(Cog_Total = sum(Analogies, Matrix, Pattern, ThreeD, Verbal)/5) %>% 
-        left_join(df_Rasch2)
+        left_join(df_Rasch2) #join in Rasch scores for proficiency based on 25 cognitive items
 
-
+#Visualizations ###
+#Personality raw scores
 df_scored %>% filter(Pers_Miss<miss_limit) %>% 
         gather(Problem_Solving:Tolerance, key=Dimension, value=Score) %>% 
         ggplot(aes(x=reorder(Dimension, Score, FUN=mean), y=Score)) +
@@ -188,8 +189,9 @@ df_scored %>% filter(Pers_Miss<miss_limit) %>%
         coord_flip() + xlab("") + 
         ggtitle("Boxplot: Average Scores by Personality Dimension") +
         labs(caption = "Note: 1=Low Self-report; 5=High Self-report") +
-        ggsave("Personality_RawScores.jpg", width = 10, height = 6, units = "in" )
+        ggsave("Personality_RawScores.jpg", width = 10, height = 6, units = "in" ) #save to folder
 
+#Cognitive raw scores
 df_scored %>% filter(Cog_Miss<miss_limit) %>% 
         gather(Analogies:Verbal, key=Dimension, value=Score) %>% 
         ggplot(aes(x=reorder(Dimension, Score, FUN=mean), y=Score)) +
@@ -197,15 +199,16 @@ df_scored %>% filter(Cog_Miss<miss_limit) %>%
         coord_flip() + xlab("") +
         ylab("Score (% correct)") +
         ggtitle("Boxplot: Scores by Cognitive Test Type") +
-        ggsave("Cognitive_RawScores.jpg", width = 10, height = 6, units = "in" )
+        ggsave("Cognitive_RawScores.jpg", width = 10, height = 6, units = "in" ) #save to folder
 
-#Correlation Plot Personality
-dfcorrplot <-  df_scored %>% 
+#Correlation Plot of Personality Dimensions
+dfcorrplot <-  df_scored %>%  #dataframe of select features in a matrix
         filter(Pers_Miss<miss_limit) %>% 
         select(ID, Problem_Solving:Tolerance) %>%
         column_to_rownames("ID") %>% as.data.frame()
 
-corrplot(cor(dfcorrplot), method="color", order="hclust", type="full", addrect=10, cl.lim=c(-1,1), addCoef.col="black", rect.col="green", diag=FALSE, number.digits=2, number.font=.5 , number.cex=.5, tl.cex=.5)
+corrplot(cor(dfcorrplot), method="color", order="hclust", type="full", addrect=10, cl.lim=c(-1,1), 
+         addCoef.col="black", rect.col="green", diag=FALSE, number.digits=2, number.font=.5 , number.cex=.5, tl.cex=.5) #corrplot personality items
 
 #Correlation Plot Cognitive
 dfcorrplot2 <-  df_scored %>% 
@@ -213,22 +216,26 @@ dfcorrplot2 <-  df_scored %>%
         select(ID, Analogies:Verbal) %>%
         column_to_rownames("ID") %>% as.data.frame()
 
-corrplot(cor(dfcorrplot2), method="color", order="hclust", type="full", addrect=1, cl.lim=c(-1,1), addCoef.col="black", rect.col="green", diag=FALSE, number.digits=2, number.font=.5 , number.cex=.5)
+corrplot(cor(dfcorrplot2), method="color", order="hclust", type="full", addrect=1, cl.lim=c(-1,1), 
+         addCoef.col="black", rect.col="green", diag=FALSE, number.digits=2, number.font=.5 , number.cex=.5) #corrplot cognitive items
 
-
-#scale Personality scored data
-df_scored2 <- df_scored %>% filter(Pers_Miss < .1) %>% ungroup() %>% 
+#Scale Personality scored data with mean of zero and std deviation of 1
+df_scored2 <- df_scored %>% filter(Pers_Miss <miss_limit)) %>% ungroup() %>% 
         select(ID, Work_Role, Problem_Solving:Tolerance) %>% 
-        mutate_at(vars(Problem_Solving:Tolerance), scale) %>%
+        mutate_at(vars(Problem_Solving:Tolerance), scale) %>% #scale function
         gather(Problem_Solving:Tolerance, key=Dimension, value=Score) 
 
-df_scored2_summary <-  df_scored2  %>% 
+df_scored2_summary <-  df_scored2  %>% #compute summary statistics for all work roles
         summarySE(groupvars = c("Work_Role", "Dimension"), measurevar = "Score")
-df_scored2_order <- df_scored2 %>% 
+
+df_scored2_order <- df_scored2 %>% #compute summary statistics for Tier 1 work role
         summarySE(groupvars = c("Work_Role", "Dimension"), measurevar = "Score") %>% 
-        filter(Work_Role=="Tier_1") %>% mutate(order=rank(Score)) %>% select(Dimension, order)
-#Visualization        
-df_scored2_summary %>% left_join(df_scored2_order) %>%  filter(N>5) %>% 
+        filter(Work_Role=="Tier_1") %>% 
+        mutate(order=rank(Score)) %>% 
+        select(Dimension, order)
+
+#Visualization of summary statistics for Personality results by work role      
+df_scored2_summary %>% left_join(df_scored2_order) %>%  filter(N>5) %>% #apply a filter to ensure n is greater than 5
         ggplot(aes(x=reorder(Dimension, order), y=Score, color=Work_Role, group=Work_Role)) +
         geom_point(aes(size=Work_Role)) +
         scale_size_manual(values=c(3,2,2)) +
@@ -240,21 +247,24 @@ df_scored2_summary %>% left_join(df_scored2_order) %>%  filter(N>5) %>%
         theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
         ylim(-1,1) +
         ggtitle("Scaled Score Mean by Work Role") +
-        ggsave("PersonalityScores_WorkRole.jpg", width = 10, height = 6, units = "in" )
+        ggsave("PersonalityScores_WorkRole.jpg", width = 10, height = 6, units = "in" ) #save to folder
 
-#scale Cognitive scored data
-df_scored3 <- df_scored %>% filter(Cog_Miss < .1) %>% ungroup() %>% 
+#Scale Cognitive scored data
+df_scored3 <- df_scored %>% filter(Cog_Miss < miss_limit) %>% ungroup() %>% 
         select(ID, Work_Role, Analogies:Verbal, Proficiency) %>% 
-        mutate_at(vars(Analogies:Verbal), scale) %>%
+        mutate_at(vars(Analogies:Verbal), scale) %>% #scale function
         gather(Analogies:Proficiency, key=Test, value=Score) 
 
-df_scored3_summary <-  df_scored3  %>% 
+df_scored3_summary <-  df_scored3  %>%  #compute summary statistics for all work roles
         summarySE(groupvars = c("Work_Role", "Test"), measurevar = "Score")
-df_scored3_order <- df_scored3 %>% 
-        summarySE(groupvars = c("Work_Role", "Test"), measurevar = "Score") %>% 
-        filter(Work_Role=="Tier_1") %>% mutate(order=rank(Score)) %>% select(Test, order)
 
-#Visualization        
+df_scored3_order <- df_scored3 %>% #compute summary statistics for Tier 1 work role
+        summarySE(groupvars = c("Work_Role", "Test"), measurevar = "Score") %>% 
+        filter(Work_Role=="Tier_1") %>% 
+        mutate(order=rank(Score)) %>% 
+        select(Test, order)
+
+#Visualization of summary statistics for Cognitive results by work role     
 df_scored3_summary %>% left_join(df_scored3_order) %>%  filter(N>6) %>% 
         ggplot(aes(x=reorder(Test, order), y=Score, color=Work_Role, group=Work_Role)) +
         geom_point(aes(size=Work_Role)) +
@@ -267,6 +277,6 @@ df_scored3_summary %>% left_join(df_scored3_order) %>%  filter(N>6) %>%
         theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
         ylim(-1.5,1.5) +
         ggtitle("Cognitive Scores by Work Role") +
-        ggsave("CognitveScores_WorkRole.jpg", width = 10, height = 6, units = "in" )
+        ggsave("CognitveScores_WorkRole.jpg", width = 10, height = 6, units = "in" ) #save to folder
 
 ########################################### Working Line - Under Construction #################
