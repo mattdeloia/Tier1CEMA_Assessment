@@ -1,4 +1,4 @@
-#load libraries
+#Load libraries
 library(readxl)
 library(Rmisc)
 library(Amelia)
@@ -7,41 +7,43 @@ library(tidyverse)
 library(corrplot)
 library(eRm)
 
-#name of datafile
+#Name of datafile download from Verint
 file <- "CyberCompetencies.xlsx"
 
-#functions
+#Scoring functions
 likertNum <- function(x){
         case_when(
-                x == "Very Accurate" ~ 5,
+                x == "Very Accurate" ~ 5, #Likert Scale 1 begin
                 x == "Moderately Accurate" ~ 4,
                 x == "Neither Accurate Nor Inaccurate" ~ 3,
                 x == "Moderately Inaccurate" ~ 2,
-                x == "Very Inaccurate" ~ 1,
-                x == "Strongly Agree" ~ 5,
+                x == "Very Inaccurate" ~ 1,  #Likert Scale 1 end
+                x == "Strongly Agree" ~ 5, #Likert Scale 2 begin
                 x == "Moderately Agree" ~ 4,
                 x == "Neither Agree nor Disagree" ~ 3,
                 x == "Moderately Disagree" ~ 2,
-                x == "Strongly Disagree" ~ 1
+                x == "Strongly Disagree" ~ 1 #Likert Scale 2 end
         )
 }
 
-miss_limit = .10
-#count number of missing items (Personality)
+#establish a threshold to discard respondant data based on missingness
+miss_limit = .10 #percentage of missing data allowed
+
+#count of missing items: Personality
 df_mis_P <-  read_xlsx(file) %>% 
         gather(`1_ProblemSolver (Q1_A_1)`: `21_ToleranceOfAmbiguity (Q21_A_16)`, key=Question, value=Answer) %>% 
-        group_by(`Record ID`) %>% summarise(Pers_Miss = sum(is.na(Answer))/174)
+        group_by(`Record ID`) %>% summarise(Pers_Miss = sum(is.na(Answer))/174) #174 total Personality items
 
 
-#count number of missing items (Cognitive)
+#count of missing items: Cognitive
 df_mis_C <-  read_xlsx(file) %>% gather(`Pattern_Q1 (Q23)`: `3D_Q16 (Q47)`, key=Question, value=Answer) %>% 
-        group_by(`Record ID`) %>% summarise(Cog_Miss = sum(is.na(Answer))/25)
+        group_by(`Record ID`) %>% summarise(Cog_Miss = sum(is.na(Answer))/25) #25 total Cognitive items
 
-#load raw data and pre-process
+#load and pre-process raw data
 df_preprocess <- read_xlsx(file) %>% 
         dplyr::rename(
-                `Analogies_Q25 (Q34)` = `Analogies_Q16 (Q34)`,
-                `OSCP`        =`FormalCerts (Q58_1)`,
+                `Analogies_Q25 (Q34)` = `Analogies_Q16 (Q34)`, #fix mistake on label of question from ICAR; Analogies_Q25 used in test instead of Analogies_Q16
+                `OSCP`        =`FormalCerts (Q58_1)`, #label certifications
                 `OSCE`        = `FormalCerts (Q58_2)`,
                 `GPEN`      = `FormalCerts (Q58_3)`,
                 `GXPN`      = `FormalCerts (Q58_4)`,
@@ -51,23 +53,23 @@ df_preprocess <- read_xlsx(file) %>%
                 `CISM`        = `FormalCerts (Q58_8)`,
                 `Security+` = `FormalCerts (Q58_9)`,
                 `OtherCert` = `FormalCerts (Q58_10)`) %>% 
-        gather(`Rank (Q70)`:`Hexidecimal (Q69)`, key= "Question", value = "Response" ) %>%
+        gather(`Rank (Q70)`:`Hexidecimal (Q69)`, key= "Question", value = "Response" ) %>% #cleaning demographic feature labels
         separate(col = `Question`, into=c("Question", "Question2"),  sep = " ", remove="TRUE") %>% 
         select (-Question2) %>% 
         pivot_wider(names_from = Question, values_from = Response) %>% 
-        gather(`1_ProblemSolver (Q1_A_1)`: `21_ToleranceOfAmbiguity (Q21_A_16)`, key="Question", value = "Response") %>% 
+        gather(`1_ProblemSolver (Q1_A_1)`: `21_ToleranceOfAmbiguity (Q21_A_16)`, key="Question", value = "Response") %>% #cleaning personality feature labels
         separate(col = `Question`, into=c("Question2", "Question"),  sep = "[(]", remove="TRUE") %>% 
         select(-Question2) %>% 
         separate(col = `Question`, into=c("Question", "Question2"),  sep = "[)]", remove="TRUE") %>% 
         select(-Question2)  %>% 
         pivot_wider(names_from = Question, values_from = Response) %>% 
-        gather(`Pattern_Q1 (Q23)`:`3D_Q16 (Q47)`, key= "Question", value = "Response" ) %>% 
+        gather(`Pattern_Q1 (Q23)`:`3D_Q16 (Q47)`, key= "Question", value = "Response" ) %>%  #cleaning cognitive feature labels
         separate(col = `Question`, into=c("Question", "Question2"),  sep = " ", remove="TRUE") %>% 
         select(-Question2) %>% pivot_wider(names_from = Question, values_from = Response) %>%
-        mutate(Duration_min = round((Completed - Started),2)) %>%
+        mutate(Duration_min = round((Completed - Started),2)) %>% #calculate questionnaire completion time
         mutate(Duration_min = replace_na(Duration_min, 0)) %>%  
-        left_join(df_mis_P) %>% 
-        left_join(df_mis_C) %>% 
+        left_join(df_mis_P) %>% #join in missingness stat for Personality features
+        left_join(df_mis_C) %>% #join in missingness stat for Cognitive features
         drop_na(Work_Role) %>% 
         arrange(Work_Role) %>% 
         rownames_to_column("ID") %>%
