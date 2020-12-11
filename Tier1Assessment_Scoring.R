@@ -3,10 +3,10 @@ library(readxl)
 library(Rmisc)
 library(Amelia)
 library(Hmisc)
-library(tidyverse)
 library(corrplot)
 library(eRm)
-
+library(ltm)
+library(tidyverse)
 #Name of datafile download from Verint
 file <- "CyberCompetencies.xlsx"
 
@@ -26,7 +26,7 @@ likertNum <- function(x){
         )
 }
 
-#establish a threshold to discard respondant data based on missingness
+#establish a threshold to discard respondent data based on missingness
 miss_limit = .10 #percentage of missing data allowed
 
 #count of missing items: Personality
@@ -121,25 +121,44 @@ df_rawscore2[,columnsToReverse] <- 6-df_rawscore2[, columnsToReverse]  #reverse 
 
 #Imputation of mean values for personality items by work role   
 df_rawscore2_a <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_1" ) ) %>% #Tier 1 group
-        mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) %>% #personality items
-        mutate_at(vars(Pattern_Q1:`3D_Q16`),~ifelse(is.na(.x), 0, .x)) #impute zeros for missing cognitive items
+        mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) #personality items
+      
     
 df_rawscore2_b <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_2", "Tier_3", "Tier_4"))  %>% #Tier 2, 3, & 4 group
-        mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) %>% #personality items
-        mutate_at(vars(Pattern_Q1:`3D_Q16`),~ifelse(is.na(.x), 0, .x)) #impute zeros for missing cognitive items
+        mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) #personality items
+       
+    # mutate_at(vars(Pattern_Q1:`3D_Q16`),~ifelse(is.na(.x), 0, .x)) #impute zeros for missing cognitive items
 
 
 df_rawscore3 <- rbind(df_rawscore2_a, df_rawscore2_b) #bind together the Tier 1 and the Tier 2/3/4 dataframes
 
 #Rasch scoring 25 cognitive questions
-df_Rasch <- df_rawscore3 %>% filter(Cog_Miss<miss_limit) %>% select(ID, Pattern_Q1:`3D_Q16`) %>% 
+df_Rasch <- df_rawscore3 %>% filter(Cog_Miss<miss_limit) %>% dplyr::select(ID, Pattern_Q1:`3D_Q16`) %>% 
         column_to_rownames("ID") 
+rm <- RM(df_Rasch)
+summary(rm)
+etapar <- -coef(rm) 
+round(sort(etapar), 2)
 
-rm.res <- RM(df_Rasch)
-pp <- person.parameter(rm.res)
+pp <- person.parameter(rm)
+summary(pp)
+plot(pp)
+
+plotjointICC(rm.res)
+plotPImap(rm.res, sorted = TRUE)
+
+#Reliability of Person Separation
+summary(SepRel(pp))
+pmfit  <- PersonMisfit(pp)
+summary(pmfit)
+
+#Item fit
+Di_itemfit <- itemfit(pp)
+Di_itemfit
+
 df_Rasch2 <-  pp$theta.table %>% 
         rownames_to_column("ID") %>% 
-        mutate(Proficiency=round(`Person Parameter`, 2)) %>%  select(ID, Proficiency) 
+        mutate(Proficiency=round(`Person Parameter`, 2)) %>%  dplyr::select(ID, Proficiency) 
 
 #Scoring Personality Dimensions and Cognitive Test Types; normalize all scales to 1
 df_scored <- df_rawscore3 %>% 
@@ -177,10 +196,19 @@ df_scored <- df_rawscore3 %>%
         Pattern = sum(Pattern_Q1, Pattern_Q3, Pattern_Q35, Pattern_Q58, Pattern_Q6)/5,
         ThreeD = sum(`3D_Q16`, `3D_Q24`, `3D_Q29`, `3D_Q42`, `3D_Q58`)/5,
         Verbal = sum(Verbal_Q14, Verbal_Q16, Verbal_Q17, Verbal_Q32, Verbal_Q4)/5 ) %>% 
-        mutate(Cog_Total = sum(Analogies, Matrix, Pattern, ThreeD, Verbal)/5) %>% 
+        mutate(Cog_Total = sum(Analogies, Matrix, Pattern, ThreeD, Verbal)/5) %>% ungroup() %>% 
+        mutate_at(vars(Cog_Total), scale) %>% 
         left_join(df_Rasch2) #join in Rasch scores for proficiency based on 25 cognitive items
 
 #Visualizations ###
+#Comparison of Raw Score% and Theta
+df_scored %>% ggplot(aes(x=Cog_Total, y=Proficiency)) + 
+  geom_point(size = 2, color="blue") + 
+  ylim(-4,4) + ylab("Proficiency (theta)") +
+  geom_abline(slope = 1, linetype="dashed", color="red", size=1) + 
+  xlim(-4,4) +  xlab("25-item raw score (z-score)") + 
+  ggsave("Proficiency_RawScore_Comparison.jpg", width = 5, height = 4, units = "in" )
+
 #Personality raw scores
 df_scored %>% filter(Pers_Miss<miss_limit) %>% 
         gather(Problem_Solving:Tolerance, key=Dimension, value=Score) %>% 
@@ -220,7 +248,7 @@ corrplot(cor(dfcorrplot2), method="color", order="hclust", type="full", addrect=
          addCoef.col="black", rect.col="green", diag=FALSE, number.digits=2, number.font=.5 , number.cex=.5) #corrplot cognitive items
 
 #Scale Personality scored data with mean of zero and std deviation of 1
-df_scored2 <- df_scored %>% filter(Pers_Miss <miss_limit)) %>% ungroup() %>% 
+df_scored2 <- df_scored %>% filter(Pers_Miss <miss_limit) %>% ungroup() %>% 
         select(ID, Work_Role, Problem_Solving:Tolerance) %>% 
         mutate_at(vars(Problem_Solving:Tolerance), scale) %>% #scale function
         gather(Problem_Solving:Tolerance, key=Dimension, value=Score) 
@@ -256,7 +284,7 @@ df_scored3 <- df_scored %>% filter(Cog_Miss < miss_limit) %>% ungroup() %>%
         gather(Analogies:Proficiency, key=Test, value=Score) 
 
 df_scored3_summary <-  df_scored3  %>%  #compute summary statistics for all work roles
-        summarySE(groupvars = c("Work_Role", "Test"), measurevar = "Score")
+        summarySE(groupvars = c("Work_Role", "Test"), measurevar = "Score", na.rm = TRUE)
 
 df_scored3_order <- df_scored3 %>% #compute summary statistics for Tier 1 work role
         summarySE(groupvars = c("Work_Role", "Test"), measurevar = "Score") %>% 
@@ -265,8 +293,8 @@ df_scored3_order <- df_scored3 %>% #compute summary statistics for Tier 1 work r
         select(Test, order)
 
 #Visualization of summary statistics for Cognitive results by work role     
-df_scored3_summary %>% left_join(df_scored3_order) %>%  filter(N>6) %>% 
-        ggplot(aes(x=reorder(Test, order), y=Score, color=Work_Role, group=Work_Role)) +
+df_scored3_summary %>% left_join(df_scored3_order) %>%  filter(N>5) %>% 
+        ggplot(aes(x=reorder(Test, Score, FUN=max), y=Score, color=Work_Role, group=Work_Role)) +
         geom_point(aes(size=Work_Role)) +
         scale_size_manual(values=c(3,2,2)) +
         geom_line(aes(linetype=Work_Role)) +
@@ -275,7 +303,7 @@ df_scored3_summary %>% left_join(df_scored3_order) %>%  filter(N>6) %>%
         coord_flip() + xlab(" ") + ylab("mean scaled score & overall proficiency(theta)") +
         scale_color_manual(values=c("red", "darkgray", "darkgray", "darkgray")) +
         theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
-        ylim(-1.5,1.5) +
+        ylim(-3,3) +
         ggtitle("Cognitive Scores by Work Role") +
         ggsave("CognitveScores_WorkRole.jpg", width = 10, height = 6, units = "in" ) #save to folder
 
