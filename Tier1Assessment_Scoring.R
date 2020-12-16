@@ -7,6 +7,7 @@ library(corrplot)
 library(eRm)
 library(ltm)
 library(tidyverse)
+library(psych)
 #Name of datafile download from Verint
 file <- "CyberCompetencies.xlsx"
 
@@ -27,17 +28,20 @@ likertNum <- function(x){
 }
 
 #establish a threshold to discard respondent data based on missingness
-miss_limit = .10 #percentage of missing data allowed
+miss_limit = .20 #percentage of missing data allowed
 
 #count of missing items: Personality
-df_mis_P <-  read_xlsx(file) %>% 
-        gather(`1_ProblemSolver (Q1_A_1)`: `21_ToleranceOfAmbiguity (Q21_A_16)`, key=Question, value=Answer) %>% 
-        group_by(`Record ID`) %>% summarise(Pers_Miss = sum(is.na(Answer))/174) #174 total Personality items
-
-
+df_mis_P <-  read_xlsx(file) %>%
+  gather(`1_ProblemSolver (Q1_A_1)`: `21_ToleranceOfAmbiguity (Q21_A_16)`, key=Question, value=Answer)  %>%
+  group_by(`Record ID`) %>% 
+  mutate_at(vars(Answer), likertNum) %>%  
+  summarise(Miss_P = sum(is.na(Answer))/174, sd_P = sd(Answer, na.rm = TRUE))    #174 total Personality items
+ 
 #count of missing items: Cognitive
-df_mis_C <-  read_xlsx(file) %>% gather(`Pattern_Q1 (Q23)`: `3D_Q16 (Q47)`, key=Question, value=Answer) %>% 
-        group_by(`Record ID`) %>% summarise(Cog_Miss = sum(is.na(Answer))/25) #25 total Cognitive items
+df_mis_C <-  read_xlsx(file) %>% 
+  gather(`Pattern_Q1 (Q23)`: `3D_Q16 (Q47)`, key=Question, value=Answer) %>%
+  group_by(`Record ID`) %>% 
+  summarise(Miss_C = sum(is.na(Answer))/25) #25 total Cognitive items
 
 #load and pre-process raw data
 df_preprocess <- read_xlsx(file) %>% 
@@ -74,14 +78,14 @@ df_preprocess <- read_xlsx(file) %>%
         arrange(Work_Role) %>% #arrange data by work role
         rownames_to_column("ID") %>% #add a new ID label beginning with 1
         select(-`Record ID`) %>% #remove Verint ID label
-        select(ID, Rank:`3D_Q16`, Pers_Miss, Cog_Miss, Duration_min) #select features to carry forward in analysis
+        select(ID,Miss_P, Miss_C, sd_P, Duration_min, Rank:`3D_Q16`) #select features to carry forward in analysis
 
 #Replace Work roles with simple categories
 df_preprocess$Work_Role <-  gsub("Tier-1 - Remote Operator|Tier-1 - Capability Developer|Tier-1 - Exploitation Analyst", "Tier_1", df_preprocess$Work_Role)
 df_preprocess$Work_Role <-  gsub("Tier 2- Data Architect, Network Analyst, System Analyst [(]All Master Proficiency level only[)]", "Tier_2", df_preprocess$Work_Role)
 df_preprocess$Work_Role <-  gsub("Tier 3- Other work role directly assigned to a Cyber Mission Force Team", "Tier_3", df_preprocess$Work_Role)
 df_preprocess$Work_Role <-  gsub("Tier 4 -  Other authorized cyber work role|I am currently not assigned a cyber work role or I am assigned as a student", "Tier_4", df_preprocess$Work_Role)
-
+df_preprocess$Duration_min <- as.numeric(df_preprocess$Duration_min)
 #plot a missmap of raw data
 missmap(df_preprocess %>% select(ID: `3D_Q16`, Duration_min) %>% arrange(Duration_min), rank.order=FALSE, main = "Missing values vs observed")
 
@@ -119,21 +123,35 @@ df_rawscore2 <- df_rawscore
 columnsToReverse <-  c('Q10_A_16','Q10_A_17','Q10_A_18','Q10_A_19','Q10_A_20', 'Q18_A_2', 'Q18_A_4', 'Q18_A_6', 'Q22_A_7', 'Q22_A_8', 'Q22_A_9', 'Q22_A_10', 'Q21_A_1', 'Q21_A_3','Q21_A_5','Q21_A_7','Q21_A_9', 'Q21_A_11', 'Q21_A_13', 'Q21_A_15') 
 df_rawscore2[,columnsToReverse] <- 6-df_rawscore2[, columnsToReverse]  #reverse scoring requires subtracting from number 6 (one more than max score of 5)
 
-#Imputation of mean values for personality items by work role   
-df_rawscore2_a <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_1" ) ) %>% #Tier 1 group
-        mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) #personality items
-      
-    
-df_rawscore2_b <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_2", "Tier_3", "Tier_4"))  %>% #Tier 2, 3, & 4 group
-        mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) #personality items
-       
-    # mutate_at(vars(Pattern_Q1:`3D_Q16`),~ifelse(is.na(.x), 0, .x)) #impute zeros for missing cognitive items
+#Exploration of Non-purposeful responses and determination of infrequency of responses based on False Keyed (High Endorsement) and True Keyed (Low Endorsement) items
+item_stats <- df_rawscore2 %>% filter(Miss_P< miss_limit) %>% select(ID, Q1_A_1:Q21_A_16) %>% gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>% 
+  summarySE(groupvars = "Question", measurevar = "Score", na.rm = TRUE) %>% arrange(Score)
+
+df_rawscore3 <-  df_rawscore2 %>% group_by(ID) %>% 
+  mutate(infreq= .5*(6-mean(c(Q22_A_1, Q1_A_5, Q22_A_4, Q3_A_6, Q1_A_1, Q17_A_4),na.rm = TRUE )) + .5*(mean(c(Q21_A_13, Q15_A_5, Q8_A_3, Q10_A_23, Q12_A_3, Q14_A_4), na.rm=TRUE)))  %>% 
+  select(ID,infreq, sd_P ) %>% ungroup() %>% 
+  mutate_at (vars(infreq, sd_P), scale) %>% 
+  group_by(ID) %>% 
+  mutate(infreq2=mean(c(infreq, -(sd_P)), na.rm = TRUE) ) %>% select (ID, infreq, sd_P, infreq2)
+
+df_rawscore3 %>% ggplot() + geom_boxplot(aes(y=infreq))
 
 
-df_rawscore3 <- rbind(df_rawscore2_a, df_rawscore2_b) #bind together the Tier 1 and the Tier 2/3/4 dataframes
+# #Imputation of mean values for personality items by work role   
+# df_rawscore2_a <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_1" ) ) %>% #Tier 1 group
+#         mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) #personality items
+#       
+#     
+# df_rawscore2_b <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_2", "Tier_3", "Tier_4"))  %>% #Tier 2, 3, & 4 group
+#         mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) #personality items
+#        
+#     # mutate_at(vars(Pattern_Q1:`3D_Q16`),~ifelse(is.na(.x), 0, .x)) #impute zeros for missing cognitive items
+# 
+# 
+# df_rawscore3 <- rbind(df_rawscore2_a, df_rawscore2_b) #bind together the Tier 1 and the Tier 2/3/4 dataframes
 
-#Rasch scoring 25 cognitive questions
-df_Rasch <- df_rawscore3 %>% filter(Cog_Miss<miss_limit) %>% dplyr::select(ID, Pattern_Q1:`3D_Q16`) %>% 
+#Rasch scoring and analysis of 25 cognitive questions
+df_Rasch <- df_rawscore2 %>% filter(Miss_C<miss_limit) %>% dplyr::select(ID, Pattern_Q1:`3D_Q16`) %>% 
         column_to_rownames("ID") 
 rm <- RM(df_Rasch)
 summary(rm)
@@ -141,7 +159,6 @@ etapar <- -coef(rm)
 round(sort(etapar), 2)
 
 pp <- person.parameter(rm)
-summary(pp)
 plot(pp)
 
 plotjointICC(rm.res)
@@ -160,59 +177,100 @@ df_Rasch2 <-  pp$theta.table %>%
         rownames_to_column("ID") %>% 
         mutate(Proficiency=round(`Person Parameter`, 2)) %>%  dplyr::select(ID, Proficiency) 
 
+#Item Analysis using psych package
+keys.list <- list(
+  Problem_Solving = c('Q1_A_1', 'Q1_A_2', 'Q1_A_3', 'Q1_A_4', 'Q1_A_5'),
+  Depth_Thought = c('Q3_A_1', 'Q3_A_2', 'Q3_A_3', 'Q3_A_4', 'Q3_A_5', 'Q3_A_6', 'Q3_A_7'),
+  Mental_Quickness = c('Q4_A_1', 'Q4_A_2', 'Q4_A_3', 'Q4_A_4', 'Q4_A_5', 'Q4_A_6', 'Q4_A_7'),
+  Need_Cognition = c('Q5_A_1', 'Q5_A_2', 'Q5_A_3', 'Q5_A_4', 'Q5_A_5', 'Q5_A_6'), 
+  Love_Learning = c('Q6_A_1', 'Q6_A_2', 'Q6_A_3', 'Q6_A_4', 'Q6_A_5', 'Q6_A_6'),
+  Creativity = c('Q7_A_1', 'Q7_A_2', 'Q7_A_3', 'Q7_A_4', 'Q7_A_5', 'Q7_A_6', 'Q7_A_7', 'Q7_A_8', 'Q7_A_9', 'Q7_A_10', 'Q7_A_11', 'Q7_A_12', 'Q7_A_13'),
+  Concientiousness = c('Q8_A_1', 'Q8_A_2', 'Q8_A_3', 'Q8_A_4', 'Q8_A_5', 'Q8_A_6', 'Q8_A_7', 'Q8_A_8', 'Q8_A_9', 'Q8_A_10'))
+,
+  Orderliness = (c(Q9_A_1, Q9_A_2, Q9_A_3, Q9_A_4, Q9_A_5),
+  Deprivation_Sensitivity = (c(Q10_A_1, Q10_A_2, Q10_A_3, Q10_A_4, Q10_A_5),
+  Joyous_Exploration = (c(Q10_A_6, Q10_A_7, Q10_A_8, Q10_A_9, Q10_A_10),
+  Social_Curiosity = (c(Q10_A_11, Q10_A_12, Q10_A_13, Q10_A_14, Q10_A_15),
+  Stress_Tolerance = (c(Q10_A_16, Q10_A_17, Q10_A_18, Q10_A_19, Q10_A_20),
+  Thrill_Seeking = (c(Q10_A_21, Q10_A_22, Q10_A_23, Q10_A_24, Q10_A_25),
+  Interpersonal_Understanding = (c(Q11_A_1, Q11_A_2, Q11_A_3),
+  Self_Confidence = (c(Q11_A_4, Q11_A_5, Q11_A_6, Q11_A_7),
+  Suspension_Judgement = (c(Q11_A_8, Q11_A_9, Q11_A_10, Q11_A_11, Q11_A_12),
+  Self_Discipline = (c(Q12_A_1, Q12_A_2, Q12_A_3, Q12_A_4), 
+  Industriness = (c(Q13_A_1, Q13_A_2, Q13_A_3, Q13_A_4, Q13_A_5), 
+  Enthusiasm = (c(Q14_A_1, Q14_A_2, Q14_A_3, Q14_A_4, Q14_A_5),
+  Flow_Proneness = (c(Q15_A_1, Q15_A_2, Q15_A_3, Q15_A_4, Q15_A_5, Q15_A_6),
+  Cyberwork_Confidence = (c(Q16_A_1, Q16_A_2, Q16_A_3, Q16_A_4, Q16_A_5, Q16_A_6),
+  General_SelfEfficacy = (c(Q17_A_1, Q17_A_2, Q17_A_3, Q17_A_4, Q17_A_5, Q17_A_6, Q17_A_7, Q17_A_8),
+  Resilience = (c(Q18_A_1, Q18_A_2, Q18_A_3, Q18_A_4, Q18_A_5, Q18_A_6),
+  Teamwork = (c(Q19_A_1, Q19_A_2, Q19_A_3, Q19_A_4, Q19_A_5),
+  Leadership = (c(Q20_A_1, Q20_A_2, Q20_A_3, Q20_A_4, Q20_A_5, Q20_A_6, Q20_A_7),
+  Intellectual_Openness = (c(Q22_A_1, Q22_A_2, Q22_A_3, Q22_A_4, Q22_A_5, Q22_A_6, Q22_A_7, Q22_A_8, Q22_A_9, Q22_A_10),
+  Tolerance = (c(Q21_A_1, Q21_A_2, Q21_A_3, Q21_A_4, Q21_A_5, Q21_A_6, Q21_A_7, Q21_A_8, Q21_A_9, Q21_A_10, Q21_A_11, Q21_A_12, Q21_A_13, Q21_A_14, Q21_A_15, Q21_A_16),
+)
+
+item_analysis_data <- df_rawscore2 %>% select (Q1_A_1:Q21_A_16)
+scores <- scoreItems(keys.list,item_analysis_data)
+summary(scores)
+
+
 #Scoring Personality Dimensions and Cognitive Test Types; normalize all scales to 1
-df_scored <- df_rawscore3 %>% 
+
+df_scored <- df_rawscore2 %>% 
         group_by (ID) %>% 
         mutate(
-        Problem_Solving = sum(Q1_A_1, Q1_A_2, Q1_A_3, Q1_A_4, Q1_A_5)/5,
-        Depth_Thought = sum (Q3_A_1, Q3_A_2, Q3_A_3, Q3_A_4, Q3_A_5, Q3_A_6, Q3_A_7)/7,
-        Mental_Quickness = sum (Q4_A_1, Q4_A_2, Q4_A_3, Q4_A_4, Q4_A_5, Q4_A_6, Q4_A_7)/7,
-        Need_Cognition = sum (Q5_A_1, Q5_A_2, Q5_A_3, Q5_A_4, Q5_A_5, Q5_A_6)/6, 
-        Love_Learning = sum (Q6_A_1, Q6_A_2, Q6_A_3, Q6_A_4, Q6_A_5, Q6_A_6)/6,
-        Creativity = sum (Q7_A_1, Q7_A_2, Q7_A_3, Q7_A_4, Q7_A_5, Q7_A_6, Q7_A_7, Q7_A_8, Q7_A_9, Q7_A_10, Q7_A_11, Q7_A_12, Q7_A_13)/13,
-        Concientiousness = sum (Q8_A_1, Q8_A_2, Q8_A_3, Q8_A_4, Q8_A_5, Q8_A_6, Q8_A_7, Q8_A_8, Q8_A_9, Q8_A_10)/10,
-        Orderliness = sum (Q9_A_1, Q9_A_2, Q9_A_3, Q9_A_4, Q9_A_5)/5,
-        Deprivation_Sensitivity = sum (Q10_A_1, Q10_A_2, Q10_A_3, Q10_A_4, Q10_A_5)/5,
-        Joyous_Exploration = sum (Q10_A_6, Q10_A_7, Q10_A_8, Q10_A_9, Q10_A_10)/5,
-        Social_Curiosity = sum (Q10_A_11, Q10_A_12, Q10_A_13, Q10_A_14, Q10_A_15)/5,
-        Stress_Tolerance = sum (Q10_A_16, Q10_A_17, Q10_A_18, Q10_A_19, Q10_A_20)/5,
-        Thrill_Seeking = sum (Q10_A_21, Q10_A_22, Q10_A_23, Q10_A_24, Q10_A_25)/5,
-        Interpersonal_Understanding = sum (Q11_A_1, Q11_A_2, Q11_A_3)/3,
-        Self_Confidence = sum (Q11_A_4, Q11_A_5, Q11_A_6, Q11_A_7)/4,
-        Suspension_Judgement = sum (Q11_A_8, Q11_A_9, Q11_A_10, Q11_A_11, Q11_A_12)/5,
-        Self_Discipline = sum (Q12_A_1, Q12_A_2, Q12_A_3, Q12_A_4)/4, 
-        Industriness = sum (Q13_A_1, Q13_A_2, Q13_A_3, Q13_A_4, Q13_A_5)/5, 
-        Enthusiasm = sum (Q14_A_1, Q14_A_2, Q14_A_3, Q14_A_4, Q14_A_5)/5,
-        Flow_Proneness = sum (Q15_A_1, Q15_A_2, Q15_A_3, Q15_A_4, Q15_A_5, Q15_A_6)/6,
-        Cyberwork_Confidence = sum (Q16_A_1, Q16_A_2, Q16_A_3, Q16_A_4, Q16_A_5, Q16_A_6)/6,
-        General_SelfEfficacy = sum (Q17_A_1, Q17_A_2, Q17_A_3, Q17_A_4, Q17_A_5, Q17_A_6, Q17_A_7, Q17_A_8)/8,
-        Resilience = sum (Q18_A_1, Q18_A_2, Q18_A_3, Q18_A_4, Q18_A_5, Q18_A_6)/6,
-        Teamwork = sum (Q19_A_1, Q19_A_2, Q19_A_3, Q19_A_4, Q19_A_5)/5,
-        Leadership = sum (Q20_A_1, Q20_A_2, Q20_A_3, Q20_A_4, Q20_A_5, Q20_A_6, Q20_A_7)/7,
-        Intellectual_Openness = sum (Q22_A_1, Q22_A_2, Q22_A_3, Q22_A_4, Q22_A_5, Q22_A_6, Q22_A_7, Q22_A_8, Q22_A_9, Q22_A_10)/10,
-        Tolerance = sum (Q21_A_1, Q21_A_2, Q21_A_3, Q21_A_4, Q21_A_5, Q21_A_6, Q21_A_7, Q21_A_8, Q21_A_9, Q21_A_10, Q21_A_11, Q21_A_12, Q21_A_13, Q21_A_14, Q21_A_15, Q21_A_16)/16,
-        Analogies = sum(Analogies_Q14, Analogies_Q25,Analogies_Q4,Analogies_Q5,Analogies_Q8)/5,
-        Matrix = sum(Matrix_Q43, Matrix_Q48, Matrix_Q50, Matrix_Q53,Matrix_Q55)/5,
-        Pattern = sum(Pattern_Q1, Pattern_Q3, Pattern_Q35, Pattern_Q58, Pattern_Q6)/5,
-        ThreeD = sum(`3D_Q16`, `3D_Q24`, `3D_Q29`, `3D_Q42`, `3D_Q58`)/5,
-        Verbal = sum(Verbal_Q14, Verbal_Q16, Verbal_Q17, Verbal_Q32, Verbal_Q4)/5 ) %>% 
-        mutate(Cog_Total = sum(Analogies, Matrix, Pattern, ThreeD, Verbal)/5) %>% ungroup() %>% 
-        mutate_at(vars(Cog_Total), scale) %>% 
+        Problem_Solving = mean(c(Q1_A_1, Q1_A_2, Q1_A_3, Q1_A_4, Q1_A_5), na.rm = TRUE),
+        Depth_Thought = mean (c(Q3_A_1, Q3_A_2, Q3_A_3, Q3_A_4, Q3_A_5, Q3_A_6, Q3_A_7), na.rm = TRUE),
+        Mental_Quickness = mean (c(Q4_A_1, Q4_A_2, Q4_A_3, Q4_A_4, Q4_A_5, Q4_A_6, Q4_A_7), na.rm = TRUE),
+        Need_Cognition = mean(c(Q5_A_1, Q5_A_2, Q5_A_3, Q5_A_4, Q5_A_5, Q5_A_6), na.rm = TRUE), 
+        Love_Learning = mean(c(Q6_A_1, Q6_A_2, Q6_A_3, Q6_A_4, Q6_A_5, Q6_A_6), na.rm = TRUE),
+        Creativity = mean(c(Q7_A_1, Q7_A_2, Q7_A_3, Q7_A_4, Q7_A_5, Q7_A_6, Q7_A_7, Q7_A_8, Q7_A_9, Q7_A_10, Q7_A_11, Q7_A_12, Q7_A_13), na.rm = TRUE),
+        Concientiousness = mean(c(Q8_A_1, Q8_A_2, Q8_A_3, Q8_A_4, Q8_A_5, Q8_A_6, Q8_A_7, Q8_A_8, Q8_A_9, Q8_A_10), na.rm = TRUE),
+        Orderliness = mean(c(Q9_A_1, Q9_A_2, Q9_A_3, Q9_A_4, Q9_A_5), na.rm = TRUE),
+        Deprivation_Sensitivity = mean(c(Q10_A_1, Q10_A_2, Q10_A_3, Q10_A_4, Q10_A_5), na.rm = TRUE),
+        Joyous_Exploration = mean(c(Q10_A_6, Q10_A_7, Q10_A_8, Q10_A_9, Q10_A_10), na.rm = TRUE),
+        Social_Curiosity = mean(c(Q10_A_11, Q10_A_12, Q10_A_13, Q10_A_14, Q10_A_15), na.rm = TRUE),
+        Stress_Tolerance = mean(c(Q10_A_16, Q10_A_17, Q10_A_18, Q10_A_19, Q10_A_20), na.rm = TRUE),
+        Thrill_Seeking = mean(c(Q10_A_21, Q10_A_22, Q10_A_23, Q10_A_24, Q10_A_25), na.rm = TRUE),
+        Interpersonal_Understanding = mean(c(Q11_A_1, Q11_A_2, Q11_A_3), na.rm = TRUE),
+        Self_Confidence = mean(c(Q11_A_4, Q11_A_5, Q11_A_6, Q11_A_7), na.rm = TRUE),
+        Suspension_Judgement = mean(c(Q11_A_8, Q11_A_9, Q11_A_10, Q11_A_11, Q11_A_12), na.rm = TRUE),
+        Self_Discipline = mean(c(Q12_A_1, Q12_A_2, Q12_A_3, Q12_A_4), na.rm = TRUE), 
+        Industriness = mean(c(Q13_A_1, Q13_A_2, Q13_A_3, Q13_A_4, Q13_A_5), na.rm = TRUE), 
+        Enthusiasm = mean(c(Q14_A_1, Q14_A_2, Q14_A_3, Q14_A_4, Q14_A_5), na.rm = TRUE),
+        Flow_Proneness = mean(c(Q15_A_1, Q15_A_2, Q15_A_3, Q15_A_4, Q15_A_5, Q15_A_6), na.rm = TRUE),
+        Cyberwork_Confidence = mean(c(Q16_A_1, Q16_A_2, Q16_A_3, Q16_A_4, Q16_A_5, Q16_A_6), na.rm = TRUE),
+        General_SelfEfficacy = mean(c(Q17_A_1, Q17_A_2, Q17_A_3, Q17_A_4, Q17_A_5, Q17_A_6, Q17_A_7, Q17_A_8), na.rm = TRUE),
+        Resilience = mean(c(Q18_A_1, Q18_A_2, Q18_A_3, Q18_A_4, Q18_A_5, Q18_A_6), na.rm = TRUE),
+        Teamwork = mean(c(Q19_A_1, Q19_A_2, Q19_A_3, Q19_A_4, Q19_A_5), na.rm = TRUE),
+        Leadership = mean(c(Q20_A_1, Q20_A_2, Q20_A_3, Q20_A_4, Q20_A_5, Q20_A_6, Q20_A_7), na.rm = TRUE),
+        Intellectual_Openness = mean(c(Q22_A_1, Q22_A_2, Q22_A_3, Q22_A_4, Q22_A_5, Q22_A_6, Q22_A_7, Q22_A_8, Q22_A_9, Q22_A_10), na.rm = TRUE),
+        Tolerance = mean(c(Q21_A_1, Q21_A_2, Q21_A_3, Q21_A_4, Q21_A_5, Q21_A_6, Q21_A_7, Q21_A_8, Q21_A_9, Q21_A_10, Q21_A_11, Q21_A_12, Q21_A_13, Q21_A_14, Q21_A_15, Q21_A_16), na.rm = TRUE),
+        Analogies = mean(c(Analogies_Q14, Analogies_Q25,Analogies_Q4,Analogies_Q5,Analogies_Q8), na.rm = TRUE),
+        Matrix = mean(c(Matrix_Q43, Matrix_Q48, Matrix_Q50, Matrix_Q53, Matrix_Q55), na.rm = TRUE),
+        Pattern = mean(c(Pattern_Q1, Pattern_Q3, Pattern_Q35, Pattern_Q58, Pattern_Q6), na.rm = TRUE),
+        ThreeD = mean(c(`3D_Q16`, `3D_Q24`, `3D_Q29`, `3D_Q42`, `3D_Q58`), na.rm = TRUE),
+        Verbal = mean(c(Verbal_Q14, Verbal_Q16, Verbal_Q17, Verbal_Q32, Verbal_Q4), na.rm = TRUE) ) %>% 
+        mutate(Cog_tot = mean(c(Analogies_Q14, Analogies_Q25,Analogies_Q4,Analogies_Q5,Analogies_Q8,Matrix_Q43, Matrix_Q48, Matrix_Q50, Matrix_Q53, Matrix_Q55,Pattern_Q1, Pattern_Q3, Pattern_Q35, Pattern_Q58, Pattern_Q6,`3D_Q16`, `3D_Q24`, `3D_Q29`, `3D_Q42`, `3D_Q58`,Verbal_Q14, Verbal_Q16, Verbal_Q17, Verbal_Q32, Verbal_Q4), na.rm = TRUE )) %>%
         left_join(df_Rasch2) #join in Rasch scores for proficiency based on 25 cognitive items
+
+df_scored %>% filter(Duration_min>0) %>% ggplot() + geom_point(aes(x=Duration_min, Pers_sd))
 
 #Visualizations ###
 #Comparison of Raw Score% and Theta
-df_scored %>% ggplot(aes(x=Cog_Total, y=Proficiency)) + 
-  geom_point(size = 2, color="blue") + 
+df_scored %>% filter(Miss_C<miss_limit) %>% drop_na(Cog_tot, Proficiency, Duration_min) %>% ungroup() %>% 
+  mutate_at(vars(Cog_tot), scale) %>% 
+  ggplot(aes(x=Cog_tot, y=Proficiency)) + 
+  geom_point(color="blue") + 
   ylim(-4,4) + ylab("Proficiency (theta)") +
   geom_abline(slope = 1, linetype="dashed", color="red", size=1) + 
   xlim(-4,4) +  xlab("25-item raw score (z-score)") + 
   ggsave("Proficiency_RawScore_Comparison.jpg", width = 5, height = 4, units = "in" )
 
 #Personality raw scores
-df_scored %>% filter(Pers_Miss<miss_limit) %>% 
+df_scored %>% filter(Miss_P<miss_limit) %>% 
         gather(Problem_Solving:Tolerance, key=Dimension, value=Score) %>% 
-        ggplot(aes(x=reorder(Dimension, Score, FUN=mean), y=Score)) +
+        ggplot(aes(x=reorder(Dimension, Score, FUN=mean, na.rm=TRUE), y=Score)) +
         geom_boxplot() +
         coord_flip() + xlab("") + 
         ggtitle("Boxplot: Average Scores by Personality Dimension") +
@@ -220,9 +278,9 @@ df_scored %>% filter(Pers_Miss<miss_limit) %>%
         ggsave("Personality_RawScores.jpg", width = 10, height = 6, units = "in" ) #save to folder
 
 #Cognitive raw scores
-df_scored %>% filter(Cog_Miss<miss_limit) %>% 
-        gather(Analogies:Verbal, key=Dimension, value=Score) %>% 
-        ggplot(aes(x=reorder(Dimension, Score, FUN=mean), y=Score)) +
+df_scored %>% filter(Miss_C<miss_limit) %>% select(ID, Analogies:Cog_tot)  %>% 
+        gather(Analogies:Cog_tot, key=Dimension, value=Score) %>% 
+        ggplot(aes(x=reorder(Dimension, Score, FUN=mean, na.rm=TRUE), y=Score)) +
         geom_boxplot() +
         coord_flip() + xlab("") +
         ylab("Score (% correct)") +
@@ -231,7 +289,7 @@ df_scored %>% filter(Cog_Miss<miss_limit) %>%
 
 #Correlation Plot of Personality Dimensions
 dfcorrplot <-  df_scored %>%  #dataframe of select features in a matrix
-        filter(Pers_Miss<miss_limit) %>% 
+        filter(Miss_P<miss_limit) %>% 
         select(ID, Problem_Solving:Tolerance) %>%
         column_to_rownames("ID") %>% as.data.frame()
 
@@ -240,15 +298,16 @@ corrplot(cor(dfcorrplot), method="color", order="hclust", type="full", addrect=1
 
 #Correlation Plot Cognitive
 dfcorrplot2 <-  df_scored %>% 
-        filter(Cog_Miss<miss_limit) %>% 
+        filter(Miss_C<miss_limit) %>% 
         select(ID, Analogies:Verbal) %>%
         column_to_rownames("ID") %>% as.data.frame()
 
-corrplot(cor(dfcorrplot2), method="color", order="hclust", type="full", addrect=1, cl.lim=c(-1,1), 
+corrplot(cor(dfcorrplot2), method="color", order="hclust", type="full", addrect=2, cl.lim=c(-1,1), 
          addCoef.col="black", rect.col="green", diag=FALSE, number.digits=2, number.font=.5 , number.cex=.5) #corrplot cognitive items
 
+#Visualization of Personality Test Results
 #Scale Personality scored data with mean of zero and std deviation of 1
-df_scored2 <- df_scored %>% filter(Pers_Miss <miss_limit) %>% ungroup() %>% 
+df_scored2 <- df_scored %>% filter(Miss_P <miss_limit) %>% ungroup() %>% 
         select(ID, Work_Role, Problem_Solving:Tolerance) %>% 
         mutate_at(vars(Problem_Solving:Tolerance), scale) %>% #scale function
         gather(Problem_Solving:Tolerance, key=Dimension, value=Score) 
@@ -277,9 +336,10 @@ df_scored2_summary %>% left_join(df_scored2_order) %>%  filter(N>5) %>% #apply a
         ggtitle("Scaled Score Mean by Work Role") +
         ggsave("PersonalityScores_WorkRole.jpg", width = 10, height = 6, units = "in" ) #save to folder
 
+#Visualization of Cognitive Test Results
 #Scale Cognitive scored data
-df_scored3 <- df_scored %>% filter(Cog_Miss < miss_limit) %>% ungroup() %>% 
-        select(ID, Work_Role, Analogies:Verbal, Proficiency) %>% 
+df_scored3 <- df_scored %>% filter(Miss_C < miss_limit) %>% ungroup() %>% 
+        select(ID, Work_Role, Analogies:Verbal, Cog_tot, Proficiency) %>% 
         mutate_at(vars(Analogies:Verbal), scale) %>% #scale function
         gather(Analogies:Proficiency, key=Test, value=Score) 
 
@@ -300,7 +360,7 @@ df_scored3_summary %>% left_join(df_scored3_order) %>%  filter(N>5) %>%
         geom_line(aes(linetype=Work_Role)) +
         scale_linetype_manual(values=c("dashed", "blank", "blank", "blank"))+
         #geom_errorbar(aes(ymin=Score-ci, ymax=Score+ci), width=.1 )+ 
-        coord_flip() + xlab(" ") + ylab("mean scaled score & overall proficiency(theta)") +
+        coord_flip() + xlab(" ") + ylab("overall proficiency & test mean scaled score ") +
         scale_color_manual(values=c("red", "darkgray", "darkgray", "darkgray")) +
         theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
         ylim(-3,3) +
