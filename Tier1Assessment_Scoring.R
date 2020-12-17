@@ -30,7 +30,7 @@ likertNum <- function(x){
 #establish a threshold to discard respondent data based on missingness
 miss_limit = .20 #percentage of missing data allowed
 
-#count of missing items: Personality
+#count of missing items and standard deviation of responses: Personality
 df_mis_P <-  read_xlsx(file) %>%
   gather(`1_ProblemSolver (Q1_A_1)`: `21_ToleranceOfAmbiguity (Q21_A_16)`, key=Question, value=Answer)  %>%
   group_by(`Record ID`) %>% 
@@ -72,8 +72,8 @@ df_preprocess <- read_xlsx(file) %>%
         select(-Question2) %>% pivot_wider(names_from = Question, values_from = Response) %>%
         mutate(Duration_min = round((Completed - Started),2)) %>% #calculate questionnaire completion time
         mutate(Duration_min = replace_na(Duration_min, 0)) %>%  
-        left_join(df_mis_P) %>% #join in missingness stat for Personality features
-        left_join(df_mis_C) %>% #join in missingness stat for Cognitive features
+        left_join(df_mis_P, by = `Record ID`) %>% #join in missingness stat for Personality features
+        left_join(df_mis_C, by = `Record ID`) %>% #join in missingness stat for Cognitive features
         drop_na(Work_Role) %>% #drop rows with no data based on entry to work role
         arrange(Work_Role) %>% #arrange data by work role
         rownames_to_column("ID") %>% #add a new ID label beginning with 1
@@ -120,34 +120,38 @@ df_rawscore <- df_preprocess %>%
         
 #Reverse Scores for select column 
 df_rawscore2 <- df_rawscore
-columnsToReverse <-  c('Q10_A_16','Q10_A_17','Q10_A_18','Q10_A_19','Q10_A_20', 'Q18_A_2', 'Q18_A_4', 'Q18_A_6', 'Q22_A_7', 'Q22_A_8', 'Q22_A_9', 'Q22_A_10', 'Q21_A_1', 'Q21_A_3','Q21_A_5','Q21_A_7','Q21_A_9', 'Q21_A_11', 'Q21_A_13', 'Q21_A_15') 
+columnsToReverse <-  c('Q10_A_16','Q10_A_17','Q10_A_18','Q10_A_19','Q10_A_20',
+                       'Q18_A_2', 'Q18_A_4', 'Q18_A_6',
+                       'Q22_A_7', 'Q22_A_8', 'Q22_A_9', 'Q22_A_10',
+                       'Q21_A_1', 'Q21_A_3','Q21_A_5','Q21_A_7','Q21_A_9', 'Q21_A_11', 'Q21_A_13', 'Q21_A_15') 
+
 df_rawscore2[,columnsToReverse] <- 6-df_rawscore2[, columnsToReverse]  #reverse scoring requires subtracting from number 6 (one more than max score of 5)
 
 #Exploration of Non-purposeful responses and determination of infrequency of responses based on False Keyed (High Endorsement) and True Keyed (Low Endorsement) items
-item_stats <- df_rawscore2 %>% filter(Miss_P< miss_limit) %>% select(ID, Q1_A_1:Q21_A_16) %>% gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>% 
-  summarySE(groupvars = "Question", measurevar = "Score", na.rm = TRUE) %>% arrange(Score)
+item_stats <- df_rawscore2 %>%
+                filter(Miss_P< miss_limit) %>%
+                select(ID, Q1_A_1:Q21_A_16) %>%
+                gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>%
+                summarySE(groupvars = "Question", measurevar = "Score", na.rm = TRUE) %>% arrange(Score)
 
-df_rawscore3 <-  df_rawscore2 %>% group_by(ID) %>% 
-  mutate(infreq= .5*(6-mean(c(Q22_A_1, Q1_A_5, Q22_A_4, Q3_A_6, Q1_A_1, Q17_A_4),na.rm = TRUE )) + .5*(mean(c(Q21_A_13, Q15_A_5, Q8_A_3, Q10_A_23, Q12_A_3, Q14_A_4), na.rm=TRUE)))  %>% 
-  select(ID,infreq, sd_P ) %>% ungroup() %>% 
-  mutate_at (vars(infreq, sd_P), scale) %>% 
-  group_by(ID) %>% 
-  mutate(infreq2=mean(c(infreq, -(sd_P)), na.rm = TRUE) ) %>% select (ID, infreq, sd_P, infreq2)
+df_infreq <-  df_rawscore2 %>% 
+                 group_by(ID) %>% 
+                  mutate(infreq= .5*(6-mean(c(Q22_A_1, Q1_A_5, Q22_A_4, Q3_A_6, Q1_A_1, Q17_A_4),na.rm = TRUE )) #item with highest response averages
+                         .5*(mean(c(Q21_A_13, Q15_A_5, Q8_A_3, Q10_A_23, Q12_A_3, Q14_A_4), na.rm=TRUE)))  %>%  #items with lowest response averages
+                  select(ID,infreq, sd_P ) %>% ungroup() %>% 
+                  mutate_at (vars(infreq, sd_P), scale) %>% 
+                  group_by(ID) %>% 
+                  mutate(infreq2=mean(c(infreq, -(sd_P)), na.rm = TRUE) ) %>% select (ID, infreq, sd_P, infreq2) #lower infreq is better; higher sd is better
 
-df_rawscore3 %>% ggplot() + geom_boxplot(aes(y=infreq))
-
+df_infreq %>% ggplot() + geom_boxplot(aes(y=infreq)) #boxplot of infreq scale
 
 # #Imputation of mean values for personality items by work role   
 # df_rawscore2_a <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_1" ) ) %>% #Tier 1 group
 #         mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) #personality items
-#       
-#     
+#  
 # df_rawscore2_b <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_2", "Tier_3", "Tier_4"))  %>% #Tier 2, 3, & 4 group
 #         mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) #personality items
-#        
-#     # mutate_at(vars(Pattern_Q1:`3D_Q16`),~ifelse(is.na(.x), 0, .x)) #impute zeros for missing cognitive items
-# 
-# 
+#         
 # df_rawscore3 <- rbind(df_rawscore2_a, df_rawscore2_b) #bind together the Tier 1 and the Tier 2/3/4 dataframes
 
 #Rasch scoring and analysis of 25 cognitive questions
@@ -185,7 +189,7 @@ keys.list <- list(
   Need_Cognition = c('Q5_A_1', 'Q5_A_2', 'Q5_A_3', 'Q5_A_4', 'Q5_A_5', 'Q5_A_6'), 
   Love_Learning = c('Q6_A_1', 'Q6_A_2', 'Q6_A_3', 'Q6_A_4', 'Q6_A_5', 'Q6_A_6'),
   Creativity = c('Q7_A_1', 'Q7_A_2', 'Q7_A_3', 'Q7_A_4', 'Q7_A_5', 'Q7_A_6', 'Q7_A_7', 'Q7_A_8', 'Q7_A_9', 'Q7_A_10', 'Q7_A_11', 'Q7_A_12', 'Q7_A_13'),
-  Concientiousness = c('Q8_A_1', 'Q8_A_2', 'Q8_A_3', 'Q8_A_4', 'Q8_A_5', 'Q8_A_6', 'Q8_A_7', 'Q8_A_8', 'Q8_A_9', 'Q8_A_10'))
+  Concientiousness = c('Q8_A_1', 'Q8_A_2', 'Q8_A_3', 'Q8_A_4', 'Q8_A_5', 'Q8_A_6', 'Q8_A_7', 'Q8_A_8', 'Q8_A_9', 'Q8_A_10'),
 ,
   Orderliness = (c(Q9_A_1, Q9_A_2, Q9_A_3, Q9_A_4, Q9_A_5),
   Deprivation_Sensitivity = (c(Q10_A_1, Q10_A_2, Q10_A_3, Q10_A_4, Q10_A_5),
