@@ -35,7 +35,7 @@ df_mis_P <-  read_xlsx(file) %>%
   gather(`1_ProblemSolver (Q1_A_1)`: `21_ToleranceOfAmbiguity (Q21_A_16)`, key=Question, value=Answer)  %>%
   group_by(`Record ID`) %>% 
   mutate_at(vars(Answer), likertNum) %>%  
-  summarise(Miss_P = sum(is.na(Answer))/174, sd_P = sd(Answer, na.rm = TRUE))    #174 total Personality items
+  summarise(Miss_P = sum(is.na(Answer))/174)    #174 total Personality items
  
 #count of missing items: Cognitive
 df_mis_C <-  read_xlsx(file) %>% 
@@ -78,7 +78,7 @@ df_preprocess <- read_xlsx(file) %>%
         arrange(Work_Role) %>% #arrange data by work role
         rownames_to_column("ID") %>% #add a new ID label beginning with 1
         select(-`Record ID`) %>% #remove Verint ID label
-        select(ID,Miss_P, Miss_C, sd_P, Duration_min, Rank:`3D_Q16`) #select features to carry forward in analysis
+        select(ID,Miss_P, Miss_C, Duration_min, Rank:`3D_Q16`) #select features to carry forward in analysis
 
 #Replace Work roles with simple categories
 df_preprocess$Work_Role <-  gsub("Tier-1 - Remote Operator|Tier-1 - Capability Developer|Tier-1 - Exploitation Analyst", "Tier_1", df_preprocess$Work_Role)
@@ -138,10 +138,8 @@ df_infreq <-  df_rawscore2 %>%
         group_by(ID) %>% 
         mutate(infreq= .5*(6-mean(c(Q22_A_1, Q1_A_5, Q22_A_4, Q3_A_6, Q1_A_1, Q17_A_4),na.rm = TRUE )) +  #item with highest response averages
         .5*(mean(c(Q21_A_13, Q15_A_5, Q8_A_3, Q10_A_23, Q12_A_3, Q14_A_4), na.rm=TRUE)))  %>%  #items with lowest response averages
-        select(ID,infreq, sd_P ) %>% ungroup() %>% 
-        mutate_at (vars(infreq, sd_P), scale) %>% 
-        group_by(ID) %>% 
-        mutate(infreq2=mean(c(infreq, -(sd_P)), na.rm = TRUE) ) %>% select (ID, infreq, sd_P, infreq2) #lower infreq is better; higher sd is better
+        select(ID,infreq) %>% ungroup() %>% 
+        mutate_at (vars(infreq), scale) %>% #lower infreq is better; higher sd is better
 
 df_infreq %>% ggplot() + geom_boxplot(aes(y=infreq)) #boxplot of infreq scale
 
@@ -154,6 +152,11 @@ df_infreq %>% ggplot() + geom_boxplot(aes(y=infreq)) #boxplot of infreq scale
 
 #Rasch scoring and analysis of 25 cognitive questions
 df_Rasch <- df_rawscore2 %>% 
+        gather(Pattern_Q1:`3D_Q16`, key=Question, value=Response) %>%
+        gather(`1_ProblemSolver (Q1_A_1)`: `21_ToleranceOfAmbiguity (Q21_A_16)`, key=Question, value=Answer)  %>%
+        group_by(`Record ID`) %>% 
+        summarise(OptOut= sum("I don't know")) %>% #Develop a screening of those who did not put forth effort to decided answer
+        filter(OptOut < 3) %>%
         filter(Miss_C<miss_limit) %>% 
         dplyr::select(ID, Pattern_Q1:`3D_Q16`) %>% 
         column_to_rownames("ID") 
