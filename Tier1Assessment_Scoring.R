@@ -40,8 +40,17 @@ df_mis_P <-  read_xlsx(file) %>%
 #count of missing items: Cognitive
 df_mis_C <-  read_xlsx(file) %>% 
   gather(`Pattern_Q1 (Q23)`: `3D_Q16 (Q47)`, key=Question, value=Answer) %>%
-  group_by(`Record ID`) %>% 
-  summarise(Miss_C = sum(is.na(Answer))/25) #25 total Cognitive items
+  group_by(`Record ID`) %>%
+  summarise(Miss_C = sum(is.na(Answer))/25, 
+            sincere=sum(Answer=="I don't know", na.rm = TRUE)/25) #25 total Cognitive items
+
+df_mis_C %>% mutate(Miss_C = Miss_C) %>% #visualization of missing items and count of "I don't know" answers
+  select(-`Record ID`) %>% 
+  rownames_to_column("ID") %>% 
+  filter(Miss_C<miss_limit)  %>% 
+  gather(Miss_C:sincere, key=Measure, value=Score) %>% 
+  ggplot(aes(x=reorder(ID, Score, FUN=max), y=Score, color=Measure)) + 
+  geom_point() +coord_flip() + facet_grid(.~Measure)
 
 #load and pre-process raw data
 df_preprocess <- read_xlsx(file) %>% 
@@ -57,6 +66,15 @@ df_preprocess <- read_xlsx(file) %>%
         `CISM`        = `FormalCerts (Q58_8)`,
         `Security+` = `FormalCerts (Q58_9)`,
         `OtherCert` = `FormalCerts (Q58_10)`) %>% 
+        mutate(   `OSCP`      = if_else(OSCP =="OSCP", "Yes", "No"),
+                  `OSCE`      = if_else(OSCE =="OSCE", "Yes", "No"),
+                  `GPEN`      = if_else(GPEN =="GPEN", "Yes", "No"),
+                  `GXPN`      = if_else(GXPN =="GXPN", "Yes", "No"),
+                  `GCIH`      = if_else(GCIH =="GCIH", "Yes", "No"),
+                  `CEH`       = if_else(CEH =="CEH", "Yes", "No"),
+                  `CISSP`     = if_else(CISSP == "CISSP", "Yes", "No"),
+                  `CISM`      = if_else(CISM == "CISM", "Yes", "No"), 
+                  `Security+` = if_else(`Security+`=="Security+", "Yes", "No")) %>% 
         gather(`Rank (Q70)`:`Hexidecimal (Q69)`, key= "Question", value = "Response" ) %>% #cleaning demographic feature labels
         separate(col = `Question`, into=c("Question", "Question2"),  sep = " ", remove="TRUE") %>% 
         select (-Question2) %>% 
@@ -73,19 +91,29 @@ df_preprocess <- read_xlsx(file) %>%
         mutate(Duration_min = round((Completed - Started),2)) %>% #calculate questionnaire completion time
         mutate(Duration_min = replace_na(Duration_min, 0)) %>%  
         left_join(df_mis_P, by = "Record ID") %>% #join in missingness stat for Personality features
-        left_join(df_mis_C, by = "Record ID") %>% #join in missingness stat for Cognitive features
+        left_join(df_mis_C, by = "Record ID") %>% #join in missingness stat and sincere stat for Cognitive features
         drop_na(Work_Role) %>% #drop rows with no data based on entry to work role
         arrange(Work_Role) %>% #arrange data by work role
         rownames_to_column("ID") %>% #add a new ID label beginning with 1
         select(-`Record ID`) %>% #remove Verint ID label
-        select(ID,Miss_P, Miss_C, Duration_min, Rank:`3D_Q16`) #select features to carry forward in analysis
+        select(ID,Miss_P, Miss_C, sincere, Duration_min, Rank:`3D_Q16`) #select features to carry forward in analysis
 
 #Replace Work roles with simple categories
 df_preprocess$Work_Role <-  gsub("Tier-1 - Remote Operator|Tier-1 - Capability Developer|Tier-1 - Exploitation Analyst", "Tier_1", df_preprocess$Work_Role)
 df_preprocess$Work_Role <-  gsub("Tier 2- Data Architect, Network Analyst, System Analyst [(]All Master Proficiency level only[)]", "Tier_2", df_preprocess$Work_Role)
 df_preprocess$Work_Role <-  gsub("Tier 3- Other work role directly assigned to a Cyber Mission Force Team", "Tier_3", df_preprocess$Work_Role)
 df_preprocess$Work_Role <-  gsub("Tier 4 -  Other authorized cyber work role|I am currently not assigned a cyber work role or I am assigned as a student", "Tier_4", df_preprocess$Work_Role)
+df_preprocess$Bachelors_CS <- replace_na(df_preprocess$Bachelors_CS, "No")
+df_preprocess$Masters_CS <- replace_na(df_preprocess$Masters_CS, "No")
+df_preprocess$Degree <- gsub("Bachelor's Degree [(]4 year[)]", "Bachelors", df_preprocess$Degree)
+df_preprocess$Degree <- gsub("Master's Degree or higher", "Masters & Up", df_preprocess$Degree)
+df_preprocess$Degree <- gsub("Some college or university but did not graduate", "Some College", df_preprocess$Degree)
+df_preprocess$Degree <- gsub("High School Graduate", "High School", df_preprocess$Degree)
+df_preprocess$Degree <- gsub("Associate Degree [(]2 year[)]", "Associates", df_preprocess$Degree)
+df_preprocess$Experience <- gsub("6 years or more", ">5Years", df_preprocess$Experience)
+df_preprocess$Experience <- gsub("5 years or less", "<=5Years", df_preprocess$Experience)
 df_preprocess$Duration_min <- as.numeric(df_preprocess$Duration_min)
+
 #plot a missmap of raw data
 missmap(df_preprocess %>% select(ID: `3D_Q16`, Duration_min) %>% arrange(Duration_min), rank.order=FALSE, main = "Missing values vs observed")
 
@@ -136,12 +164,13 @@ item_stats <- df_rawscore2 %>%
 
 df_infreq <-  df_rawscore2 %>% 
         group_by(ID) %>% 
-        mutate(infreq= .5*(6-mean(c(Q22_A_1, Q1_A_5, Q22_A_4, Q3_A_6, Q1_A_1, Q17_A_4),na.rm = TRUE )) +  #item with highest response averages
-        .5*(mean(c(Q21_A_13, Q15_A_5, Q8_A_3, Q10_A_23, Q12_A_3, Q14_A_4), na.rm=TRUE)))  %>%  #items with lowest response averages
+        mutate(infreq= .5*(6-mean(c(Q22_A_1, Q1_A_5, Q22_A_4, Q3_A_6, Q1_A_1, Q17_A_4),na.rm = TRUE )) +  #highest response averages
+        .5*(mean(c(Q21_A_13, Q15_A_5, Q8_A_3, Q10_A_23, Q12_A_3, Q14_A_4), na.rm=TRUE)))  %>%  #lowest response averages
         select(ID,infreq) %>% ungroup() %>% 
-        mutate_at (vars(infreq), scale) %>% #lower infreq is better; higher sd is better
+        mutate_at (vars(infreq), scale) #lower infreq is better
 
-df_infreq %>% ggplot() + geom_boxplot(aes(y=infreq)) #boxplot of infreq scale
+df_infreq %>% ggplot() + 
+  geom_boxplot(aes(y=infreq)) #boxplot of infreq scale
 
 # #Imputation of mean values for personality items by work role   
 # df_rawscore2_a <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_1" ) ) %>% #Tier 1 group
@@ -152,12 +181,7 @@ df_infreq %>% ggplot() + geom_boxplot(aes(y=infreq)) #boxplot of infreq scale
 
 #Rasch scoring and analysis of 25 cognitive questions
 df_Rasch <- df_rawscore2 %>% 
-        gather(Pattern_Q1:`3D_Q16`, key=Question, value=Response) %>%
-        gather(`1_ProblemSolver (Q1_A_1)`: `21_ToleranceOfAmbiguity (Q21_A_16)`, key=Question, value=Answer)  %>%
-        group_by(`Record ID`) %>% 
-        summarise(OptOut= sum("I don't know")) %>% #Develop a screening of those who did not put forth effort to decided answer
-        filter(OptOut < 3) %>%
-        filter(Miss_C<miss_limit) %>% 
+        filter(Miss_C<miss_limit, sincere<miss_limit) %>% #filter out based on missingness and sincerity of effort
         dplyr::select(ID, Pattern_Q1:`3D_Q16`) %>% 
         column_to_rownames("ID") 
 rm <- RM(df_Rasch)
@@ -170,8 +194,8 @@ summary(rm)
 etapar <- -coef(rm) 
 round(sort(etapar), 2)
 plot(pp)
-plotjointICC(rm.res)
-plotPImap(rm.res, sorted = TRUE)
+plotjointICC(rm)
+plotPImap(rm, sorted = TRUE)
 #Reliability of Person Separation
 summary(SepRel(pp))
 pmfit  <- PersonMisfit(pp)
