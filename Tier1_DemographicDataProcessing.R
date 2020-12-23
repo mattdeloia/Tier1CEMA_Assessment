@@ -73,13 +73,14 @@ df_demographic %>%
             left_join(n_Tier) %>%
             mutate(n=round(n/n_tot,2)) %>% 
             select(-n_tot) %>%
-  ggplot(aes(x=reorder(Cert, -n, FUN = mean), y=n, color=Work_Role, group=Work_Role)) + 
+  ggplot(aes(x=reorder(Cert, n, FUN = mean), y=n, color=Work_Role, group=Work_Role)) + 
   geom_point(size=2) +
   geom_line(aes(linetype=Work_Role)) +
   scale_color_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
   scale_linetype_manual(values=c("dashed", "blank", "blank", "blank")) +
   theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
   ylab("percentage of Tier") + xlab("") +
+  coord_flip() +
   ggtitle("Certifications by Work Role")
             
 #GT Score
@@ -106,9 +107,25 @@ df_hobbies %>%
   summarise(Response = sum(Response)) %>% 
   left_join(n_Tier) %>% 
   mutate(Response = Response/n_tot) %>% 
-  ggplot(aes(x=reorder(Hobby, Response, FUN=mean), y=Response, fill=Work_Role)) + 
-  geom_col() + 
-  scale_fill_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
+  ggplot(aes(x=reorder(Hobby, Response, FUN=mean), y=Response, color=Work_Role, group=Work_Role)) + 
+  geom_point(size=2) +
+  geom_line(aes(linetype=Work_Role)) +
+  scale_color_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
+  scale_linetype_manual(values=c("dashed", "blank", "blank", "blank")) +
   theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
   xlab("") +
-  facet_grid(Work_Role~.)
+  coord_flip()
+
+#Hobbies2
+df_hobbies2 <- df_demographic %>% 
+  select(ID, CPU_OS, Game_Platform, Game_type) %>% 
+  gather(CPU_OS:Game_type, key=Category, value=Response) %>%
+  group_by(Category, Response) %>% 
+  summarise(n=n()) %>% 
+  na.omit(Category)
+  
+df_hobbies2 %>% ggplot(aes(x=reorder(Response, n, FUN=mean), y=n)) + 
+  geom_col() + 
+  facet_grid(Category~., scales = "free_y") + 
+  xlab("") +
+  coord_flip() 

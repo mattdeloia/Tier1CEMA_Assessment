@@ -113,6 +113,11 @@ df_preprocess$Degree <- gsub("Associate Degree [(]2 year[)]", "Associates", df_p
 df_preprocess$Experience <- gsub("6 years or more", ">5Years", df_preprocess$Experience)
 df_preprocess$Experience <- gsub("5 years or less", "<=5Years", df_preprocess$Experience)
 df_preprocess$Duration_min <- as.numeric(df_preprocess$Duration_min)
+df_preprocess$Degree <- factor(levels =c("High School", "Associates", "Some College", "Bachelors", "Masters & Up") , df_preprocess$Degree)
+df_preprocess$GTScore <- gsub("121 or higher", ">120", df_preprocess$GTScore)
+df_preprocess$GTScore <- gsub("120 or lower", "<=120", df_preprocess$GTScore)
+df_preprocess$GTScore <- gsub("N/A or prefer not to report", "not reported", df_preprocess$GTScore)
+
 
 #plot a missmap of raw data
 missmap(df_preprocess %>% select(ID: `3D_Q16`, Duration_min) %>% arrange(Duration_min), rank.order=FALSE, main = "Missing values vs observed")
