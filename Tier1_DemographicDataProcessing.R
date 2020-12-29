@@ -1,4 +1,5 @@
 library(DT)
+library(randomForest)
 
 df_demographic <- df_preprocess %>% select (ID,Rank:Hexidecimal)
 
@@ -129,3 +130,45 @@ df_hobbies2 %>% ggplot(aes(x=reorder(Response, n, FUN=mean), y=n)) +
   facet_grid(Category~., scales = "free_y") + 
   xlab("") +
   coord_flip() 
+
+#Random Forest Modeling################################
+set.seed(102)
+df_randomforest <- df_demographic %>% mutate(Work_Role=if_else(Work_Role=="Tier_1", "Tier_1", "Other")) %>% 
+  select(-ID, -CPU_type,-CPU_OS, -Game_Platform, -Game_type ) %>% na.omit()
+df_randomforest[1:25] <- lapply(df_randomforest[1:25], factor)
+# Split into Train and Testation sets
+# Training Set : Testation Set = 75 : 25 (random)
+train <- sample(nrow(df_randomforest), .75*nrow(df_randomforest), replace = FALSE)
+TrainSet <- df_randomforest[train,]
+TestSet <- df_randomforest[-train,]
+# Create a Random Forest model with default parameters
+model1 <- randomForest(Work_Role ~ ., data = TrainSet, importance = TRUE)
+model1
+
+model2 <- randomForest(Work_Role ~ ., data = TrainSet, ntree = 400, mtry = 5, importance = TRUE, proximity=TRUE)
+model2
+
+# Predicting on train set
+predTrain <- predict(model2, TrainSet, type = "class")
+# Checking classification accuracy
+table(predTrain, TrainSet$Category)
+
+# Predicting on Test set
+predTest <- predict(model2, TestSet, type = "class")
+# Checking classification accuracy
+table(predTest,TestSet$Category)
+mean(predTest == TestSet$Category)
+
+# To check important variables
+importance(model2)        
+varImpPlot(model2) 
+
+randforest_report <- importance(model2) %>% as.data.frame() 
+max_importance <- max(randforest_report$MeanDecreaseAccuracy)
+randforest_report2 <-   rownames_to_column(randforest_report, var="Feature") %>% 
+  mutate(Importance=round(MeanDecreaseAccuracy/max_importance,1), Model="Random Forests") %>% 
+  select (Model, Feature, Importance) %>% 
+  arrange(-Importance)
+
+model_crossvalid <- train(Category ~ ., data = model_data, method="rf", trControl = trainControl(method ="cv", number = 5, verboseIter=TRUE))
+model_crossvalid

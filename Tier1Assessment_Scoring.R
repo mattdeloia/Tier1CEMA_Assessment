@@ -8,6 +8,7 @@ library(eRm)
 library(ltm)
 library(tidyverse)
 library(psych)
+library(corrplot)
 #Name of datafile download from Verint
 file <- "CyberCompetencies.xlsx"
 
@@ -150,7 +151,29 @@ df_rawscore <- df_preprocess %>%
         Verbal_Q17 = if_else(Verbal_Q17 == "47", 1, 0),
         Verbal_Q32 = if_else(Verbal_Q32 == "Thursday", 1, 0),
         Verbal_Q4 = if_else(Verbal_Q4 == "5", 1, 0))
-        
+
+df_CogItemCorr <- df_rawscore %>%  #Review of Cognitive item correlations to Total Score
+  #filter(Miss_C<miss_limit, sincere<miss_limit) %>% 
+    dplyr::select(Pattern_Q1:`3D_Q16`)
+mns <- -colMeans(df_CogItemCorr, na.rm=TRUE)
+
+df_CogItemCorr <- df_CogItemCorr[,order(mns)]
+
+df_CogItemCorr2 <- df_CogItemCorr %>% 
+  rownames_to_column(var="ID") %>% 
+  group_by(ID) %>% 
+  mutate(Cog_tot = mean(c(Analogies_Q14, Analogies_Q25,Analogies_Q4,Analogies_Q5,Analogies_Q8,
+                          Matrix_Q43, Matrix_Q48, Matrix_Q50, Matrix_Q53, Matrix_Q55,
+                         Pattern_Q1, Pattern_Q3, Pattern_Q35, Pattern_Q58, Pattern_Q6,
+                         `3D_Q16`, `3D_Q24`, `3D_Q29`, `3D_Q42`, `3D_Q58`,
+                         Verbal_Q14, Verbal_Q16, Verbal_Q17, Verbal_Q32, Verbal_Q4), na.rm = TRUE )) %>% 
+  na.omit() %>% 
+  column_to_rownames("ID") %>% arrange(Cog_tot)
+ 
+write.csv(df_CogItemCorr2, "CogItem_GuttmanStructure.csv") #Save data matrix showing Guttman Structure
+
+corrplot(cor(df_CogItemCorr2), method="color", order="hclust", type="full", addrect=2, cl.lim=c(-1,1), addCoef.col="black", rect.col="green", diag = FALSE, number.font=1, number.digits = 1, number.cex = .7)  #Corrplot of Cognitive Item Correlations
+
 #Reverse Scores for select column 
 df_rawscore2 <- df_rawscore
 columnsToReverse <-  c('Q10_A_16','Q10_A_17','Q10_A_18','Q10_A_19','Q10_A_20',
@@ -189,6 +212,7 @@ df_Rasch <- df_rawscore2 %>%
         filter(Miss_C<miss_limit, sincere<miss_limit) %>% #filter out based on missingness and sincerity of effort
         dplyr::select(ID, Pattern_Q1:`3D_Q16`) %>% 
         column_to_rownames("ID") 
+
 rm <- RM(df_Rasch)
 pp <- person.parameter(rm)
 df_Rasch2 <-  pp$theta.table %>% 
