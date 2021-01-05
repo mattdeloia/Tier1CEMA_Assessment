@@ -80,7 +80,7 @@ df_demographic %>%
   scale_color_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
   scale_linetype_manual(values=c("dashed", "blank", "blank", "blank")) +
   theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
-  ylab("percentage of Tier") + xlab("") +
+  ylab("percentage of respondents") + xlab("") +
   coord_flip() +
   ggtitle("Certifications by Work Role")
             
@@ -95,7 +95,8 @@ df_demographic %>%
   scale_fill_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
   facet_grid(Work_Role~.) +   
   theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
-  ggtitle("GT Categories by Work Role")
+  ylab("percentage of respondents") + xlab("") +
+  ggtitle("GT Score Categories by Work Role")
 
 #Hobbies
 df_hobbies <- df_demographic %>% 
@@ -114,7 +115,9 @@ df_hobbies %>%
   scale_color_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
   scale_linetype_manual(values=c("dashed", "blank", "blank", "blank")) +
   theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
+  ylab("percent of respondents") +
   xlab("") +
+  ylim(0,1) +
   coord_flip()
 
 #Hobbies2
@@ -129,13 +132,15 @@ df_hobbies2 %>% ggplot(aes(x=reorder(Response, n, FUN=mean), y=n)) +
   geom_col() + 
   facet_grid(Category~., scales = "free_y") + 
   xlab("") +
+  ylab("# of respondents") +
+  ggtitle("Gaming and computer system preferences (all Tier categories)") +
   coord_flip() 
 
 #Random Forest Modeling################################
 set.seed(102)
-df_randomforest <- df_demographic %>% mutate(Work_Role=if_else(Work_Role=="Tier_1", "Tier_1", "Other")) %>% 
-  select(-ID, -CPU_type,-CPU_OS, -Game_Platform, -Game_type ) %>% na.omit()
-df_randomforest[1:25] <- lapply(df_randomforest[1:25], factor)
+df_randomforest <- df_demographic %>% 
+  select(-ID, -CPU_type,-CPU_OS, -Game_Platform, -Game_type, -OtherCert ) %>% na.omit()
+df_randomforest[1:24] <- lapply(df_randomforest[1:24], factor)
 # Split into Train and Testation sets
 # Training Set : Testation Set = 75 : 25 (random)
 train <- sample(nrow(df_randomforest), .75*nrow(df_randomforest), replace = FALSE)
@@ -145,19 +150,19 @@ TestSet <- df_randomforest[-train,]
 model1 <- randomForest(Work_Role ~ ., data = TrainSet, importance = TRUE)
 model1
 
-model2 <- randomForest(Work_Role ~ ., data = TrainSet, ntree = 400, mtry = 5, importance = TRUE, proximity=TRUE)
+model2 <- randomForest(Work_Role ~ ., data = TrainSet, ntree = 400, mtry = 3, importance = TRUE, proximity=TRUE)
 model2
 
 # Predicting on train set
 predTrain <- predict(model2, TrainSet, type = "class")
 # Checking classification accuracy
-table(predTrain, TrainSet$Category)
+table(predTrain, TrainSet$Work_Role)
 
 # Predicting on Test set
 predTest <- predict(model2, TestSet, type = "class")
 # Checking classification accuracy
-table(predTest,TestSet$Category)
-mean(predTest == TestSet$Category)
+table(predTest,TestSet$Work_Role)
+mean(predTest == TestSet$Work_Role)
 
 # To check important variables
 importance(model2)        
@@ -170,5 +175,5 @@ randforest_report2 <-   rownames_to_column(randforest_report, var="Feature") %>%
   select (Model, Feature, Importance) %>% 
   arrange(-Importance)
 
-model_crossvalid <- train(Category ~ ., data = model_data, method="rf", trControl = trainControl(method ="cv", number = 5, verboseIter=TRUE))
+model_crossvalid <- train(Work_Role ~ ., data = df_randomforest, method="rf", trControl = trainControl(method ="cv", number = 5, verboseIter=TRUE))
 model_crossvalid

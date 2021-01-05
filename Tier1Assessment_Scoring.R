@@ -101,9 +101,9 @@ df_preprocess <- read_xlsx(file) %>%
 
 #Replace Work roles with simple categories
 df_preprocess$Work_Role <-  gsub("Tier-1 - Remote Operator|Tier-1 - Capability Developer|Tier-1 - Exploitation Analyst", "Tier_1", df_preprocess$Work_Role)
-df_preprocess$Work_Role <-  gsub("Tier 2- Data Architect, Network Analyst, System Analyst [(]All Master Proficiency level only[)]", "Tier_2", df_preprocess$Work_Role)
-df_preprocess$Work_Role <-  gsub("Tier 3- Other work role directly assigned to a Cyber Mission Force Team", "Tier_3", df_preprocess$Work_Role)
-df_preprocess$Work_Role <-  gsub("Tier 4 -  Other authorized cyber work role|I am currently not assigned a cyber work role or I am assigned as a student", "Tier_4", df_preprocess$Work_Role)
+df_preprocess$Work_Role <-  gsub("Tier 2- Data Architect, Network Analyst, System Analyst [(]All Master Proficiency level only[)]", "Tier_Other", df_preprocess$Work_Role)
+df_preprocess$Work_Role <-  gsub("Tier 3- Other work role directly assigned to a Cyber Mission Force Team", "Tier_Other", df_preprocess$Work_Role)
+df_preprocess$Work_Role <-  gsub("Tier 4 -  Other authorized cyber work role|I am currently not assigned a cyber work role or I am assigned as a student", "Tier_Other", df_preprocess$Work_Role)
 df_preprocess$Bachelors_CS <- replace_na(df_preprocess$Bachelors_CS, "No")
 df_preprocess$Masters_CS <- replace_na(df_preprocess$Masters_CS, "No")
 df_preprocess$Degree <- gsub("Bachelor's Degree [(]4 year[)]", "Bachelors", df_preprocess$Degree)
@@ -121,7 +121,9 @@ df_preprocess$GTScore <- gsub("N/A or prefer not to report", "not reported", df_
 
 
 #plot a missmap of raw data
-missmap(df_preprocess %>% select(ID: `3D_Q16`, Duration_min) %>% arrange(Duration_min), rank.order=FALSE, main = "Missing values vs observed")
+missmap(df_preprocess %>% filter(Work_Role=="Tier_1") %>%  select(ID: `3D_Q16`, Duration_min) %>% arrange(-Miss_P), rank.order=FALSE, main = "Missing values vs observed")  #Tier1 Missingness
+
+missmap(df_preprocess %>% filter(Work_Role!="Tier_1") %>%  select(ID: `3D_Q16`, Duration_min) %>% arrange(-Miss_P), rank.order=FALSE, main = "Missing values vs observed") #Tier 2-4 Missingness
 
 df_rawscore <- df_preprocess %>%   
         mutate_at(vars(`Q1_A_1` : `Q21_A_16`), likertNum) %>% #score likert items
@@ -368,32 +370,32 @@ corrplot(cor(dfcorrplot2), method="color", order="hclust", type="full", addrect=
 
 #Visualization of Personality Test Results
 #Scale Personality scored data with mean of zero and std deviation of 1
-df_scored2 <- df_scored %>% filter(Miss_P <miss_limit) %>% ungroup() %>% 
+df_scored2 <- df_scored %>% ungroup() %>% filter(Miss_P <miss_limit) %>% 
         select(ID, Work_Role, Problem_Solving:Tolerance) %>% 
         mutate_at(vars(Problem_Solving:Tolerance), scale) %>% #scale function
         gather(Problem_Solving:Tolerance, key=Dimension, value=Score) 
 
-df_scored2_summary <-  df_scored2  %>% #compute summary statistics for all work roles
-        summarySE(groupvars = c("Work_Role", "Dimension"), measurevar = "Score")
+df_scored2_summary <-  df_scored2  %>% 
+        summarySE(groupvars = c("Work_Role", "Dimension"), measurevar = "Score", na.rm = TRUE) #compute summary statistics for Tier1 and Tier_Other
 
-df_scored2_order <- df_scored2 %>% #compute summary statistics for Tier 1 work role
-        summarySE(groupvars = c("Work_Role", "Dimension"), measurevar = "Score") %>% 
+df_scored2_order <- df_scored2 %>% 
+        summarySE(groupvars = c("Work_Role", "Dimension"), measurevar = "Score", na.rm = TRUE) %>% 
         filter(Work_Role=="Tier_1") %>% 
         mutate(order=rank(Score)) %>% 
-        select(Dimension, order)
+        select(Dimension, order) #compute summary statistics for Tier 1 
 
 #Visualization of summary statistics for Personality results by work role      
-df_scored2_summary %>% left_join(df_scored2_order) %>%  filter(N>5) %>% #apply a filter to ensure n is greater than 5
-        ggplot(aes(x=reorder(Dimension, order), y=Score, color=Work_Role, group=Work_Role)) +
+df_scored2_summary %>% left_join(df_scored2_order)  %>% 
+        ggplot(aes(x=reorder(Dimension, order, fun=max), y=Score, color=Work_Role, group=Work_Role)) +
         geom_point(aes(size=Work_Role)) +
         scale_size_manual(values=c(3,2,2)) +
         geom_line(aes(linetype=Work_Role)) +
         scale_linetype_manual(values=c("dashed", "blank", "blank", "blank"))+
-       #geom_errorbar(aes(ymin=Score-ci, ymax=Score+ci), width=.1 )+ 
+       geom_errorbar(aes(ymin=Score-ci, ymax=Score+ci), width=.1 )+ 
         coord_flip() + xlab(" ") + ylab("mean scaled score") +
         scale_color_manual(values=c("red", "darkgray", "darkgray", "darkgray")) +
         theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
-        ylim(-1,1) +
+        ylim(-2,2) +
         ggtitle("Scaled Score Mean by Work Role") +
         ggsave("PersonalityScores_WorkRole.jpg", width = 10, height = 6, units = "in" ) #save to folder
 
@@ -421,11 +423,11 @@ df_scored3_summary %>% left_join(df_scored3_order)  %>%
         scale_size_manual(values=c(3,2,2)) +
         geom_line(aes(linetype=Work_Role)) +
         scale_linetype_manual(values=c("dashed", "blank", "blank", "blank"))+
-        #geom_errorbar(aes(ymin=Score-ci, ymax=Score+ci), width=.1 )+ 
+        geom_errorbar(aes(ymin=Score-ci, ymax=Score+ci), width=.1 )+ 
         coord_flip() + xlab(" ") + ylab("overall proficiency & test mean scaled score ") +
         scale_color_manual(values=c("red", "darkgray", "darkgray", "darkgray")) +
         theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
-        ylim(-3,3) +
+        ylim(-2,2) +
         ggtitle("Cognitive Scores by Work Role") +
         ggsave("CognitveScores_WorkRole.jpg", width = 10, height = 6, units = "in" ) #save to folder
 
