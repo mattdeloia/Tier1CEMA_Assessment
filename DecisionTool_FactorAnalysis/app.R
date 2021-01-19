@@ -18,6 +18,7 @@ library(tidyverse)
 library(WrightMap)
 library(rstatix)
 library(gt)
+library(randomForest)
 
 # load and tidy data
 df_question <- read_xlsx("ScaleQuestions.xlsx")
@@ -163,12 +164,12 @@ df_rawscore2[,columnsToReverse] <- 6-df_rawscore2[, columnsToReverse]  #reverse 
 
 #Item statistics of difficulty (mean) and standard deviation
 item_stats <- df_rawscore2 %>%
-    filter(Miss_P< miss_limit) %>%
     select(ID, Q1_A_1:Q21_A_16) %>%
     gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>%
     summarySE(groupvars = "Question", measurevar = "Score", na.rm = TRUE) %>% arrange(Score) %>%
     select(Question, Score, sd) %>% mutate(Score = round(Score, 1), sd=round(sd, 1)) %>% 
-    mutate(Rank = rank (-Score) ) #Rank order questions from easiest to hardest
+    mutate(Rank = rank (-Score, ties.method = "random" ) ) #Rank order questions from easiest to hardest
+
 item_stats <- rename("Mean" = "Score", item_stats)
 
 #Infrequency of response calculation
@@ -176,20 +177,23 @@ easy_mean <- item_stats %>%   #Average score of 20 easiest questions
   filter(Rank<=10) %>% select(Mean)
 easy_mean <- mean(easy_mean$Mean, na.rm = TRUE)
 
-df_infreq <-  df_rawscore2 %>% select(ID, Work_Role, Q1_A_1:Q21_A_16) %>% 
-  gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>% 
-  left_join(item_stats) %>% 
-  filter(Rank<=10) %>% 
-  group_by(ID, Work_Role)  %>% 
-  summarise(infreq= abs(easy_mean-mean(Score, na.rm = TRUE))) #lower infreq is better
-
-
 #Imputation of mean values for personality items by work role   
 df_rawscore2_a <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_1" ) ) %>% 
     mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), median(.x, na.rm = TRUE), .x)) 
 df_rawscore2_b <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_Other"))  %>% 
     mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), median(.x, na.rm = TRUE), .x))        
-df_rawscore3 <- rbind(df_rawscore2_a, df_rawscore2_b) %>% left_join(df_infreq) #bind together the Tier 1 and the Tier 2/3/4 dataframes
+df_rawscore3 <- rbind(df_rawscore2_a, df_rawscore2_b) #bind together the Tier 1 and the Tier 2/3/4 dataframes
+
+df_infreq <-  
+  df_rawscore3 %>% 
+    select(ID, Q1_A_1:Q21_A_16) %>% 
+    gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>% 
+    left_join(item_stats) %>% 
+    filter(Rank<=10) %>% ungroup() %>% 
+    group_by(ID)  %>% 
+    summarise(infreq= abs(easy_mean-mean(Score, na.rm = TRUE))) #lower infreq is better  
+
+df_rawscore4 <- df_rawscore3 %>% left_join(df_infreq, by="ID")
 
 
 # Define UI for application that draws a histogram
@@ -225,21 +229,22 @@ ui <- navbarPage(
                        step=.01),
               
               valueBoxOutput("metric", width= 4),
-              gt_output("table2")
+              
+              gt_output("table")
            
            ),
     
           
-         box(title="Missingness of Data and Sample Size", status="primary", solidHeader = TRUE, width = 4,
+         box(title="Missingness of Data", status="primary", solidHeader = TRUE, width = 4,
             
              sliderInput("miss_limit",
                          "Respondent missingness threshold percentage:",
                          min = 0,
                          max = 1,
-                         value = .20,
+                         value = .25,
                          step=.01),
              
-            plotOutput("plot3")
+            plotOutput("plot1")
            ),
         
           box(title="Infrequency of Responses", status="primary", solidHeader = TRUE, width = 4,
@@ -248,36 +253,41 @@ ui <- navbarPage(
               sliderInput("infreq_limit",
                           "Infrequency threshold value (based on high response ave):",
                           min = 0,
-                          max = 3,
+                          max = 2,
                           value = .75,
-                          step=.05),
+                          step= .05),
              
-             plotOutput("plot5")
+             plotOutput("plot2")
          ),
         
-           plotOutput("plot1", height="600px")
-           ),
+           plotOutput("plot3", height="600px")
+      ),
            
        tabPanel("Group Comparison", icon = icon ("chart-bar"), br(), br(), br(),
             
             box(title="Group Comparison - Mean Scores", status="primary", solidHeader = TRUE, width = 4,
-                plotOutput("plot2"), height="600px" ),
+                
+                plotOutput("plot4", height="600px")),
             
-            box(title="Correlation Plot", status="primary", solidHeader = TRUE, width = 8,
-                plotOutput("plot4"), height="600px" )
-           ),
+            box(title="Scale Correlations and Clustering", status="primary", solidHeader = TRUE, width = 8,
+                
+                plotOutput("plot5", height="600px"))
+      ),
     
         tabPanel("Questionnaire", icon = icon ("table"), br(), br(), br(),
-             downloadButton("downloadData", "Download Data"),
-             gt_output("table"))
+             
+                 downloadButton("downloadData", "Download Data"),
+             
+                 gt_output("table2"))
     )
     
 
 # Define server logic required to draw a histogram
 server <- function(input, output) {
     
-    efa_data <- reactive ({
-        df_rawscore3 %>% filter(Miss_P <= input$miss_limit) %>% 
+  efa_data <- reactive ({
+        df_rawscore4 %>% 
+        filter(Miss_P <= input$miss_limit) %>% 
         filter(infreq <= input$infreq_limit) %>% 
         select(Q1_A_1:Q21_A_15)
     })
@@ -340,8 +350,9 @@ server <- function(input, output) {
         stat_test() %>% mutate(Significant = if_else(p<input$pvalue, "Yes", "No")) %>% arrange(p)
         })
 
+    #Plot of factor analysis results
     
-    output$plot1 <- renderPlot({
+    output$plot3 <- renderPlot({
         df_efa () %>% 
             left_join(sig_scales()) %>% 
             summarySE(measurevar = "Loading", groupvars = c("Scale", "Trait", "Significant", "p" )) %>%
@@ -359,7 +370,8 @@ server <- function(input, output) {
             facet_grid(.~Scale)
     })
     
-     output$plot2 <- renderPlot ({
+    #Plot of group comparison 
+    output$plot4 <- renderPlot ({
         df_revised_scored()  %>% #compare summary statistics for Tier1 and Tier_Other
             summarySE(groupvars = c("Work_Role", "Scale"), measurevar = "Score", na.rm = TRUE) %>%
             left_join(df_revised_scored_order())  %>% 
@@ -374,8 +386,9 @@ server <- function(input, output) {
             ylim(0,5) 
          })
  
-     output$plot3 <- renderPlot ({
-         df_rawscore3 %>% 
+     #Histogram of Missingness
+     output$plot1 <- renderPlot ({
+         df_rawscore4 %>% 
              mutate(FilterIn = if_else(Miss_P<=input$miss_limit, "Y", "N")) %>%
              ggplot() +
          geom_histogram(aes(x=Miss_P, fill=FilterIn )) +
@@ -390,8 +403,9 @@ server <- function(input, output) {
          theme(strip.text = element_text(size=12, color="blue"))
       })
      
-     output$plot5 <- renderPlot ({
-       df_rawscore3 %>% 
+     #Histogram of infrequency
+     output$plot2 <- renderPlot ({
+       df_rawscore4 %>% 
          mutate(FilterIn = if_else(infreq<=input$infreq_limit, "Y", "N")) %>%
          ggplot() +
          geom_histogram(aes(x=infreq, fill=FilterIn )) +
@@ -399,6 +413,7 @@ server <- function(input, output) {
          geom_vline(xintercept = input$infreq_limit, linetype="dashed", color="red", size=1) +
          geom_text(aes(x=input$infreq_limit, y=0, angle=90), nudge_y=5, nudge_x=-.01,label= "threshold", size=4) +
          xlab("infrequency score (lower is better)") + 
+         xlim(0,2) +
          theme(axis.text = element_text(size = 12), axis.title = element_text(size = 12)) +
          facet_grid(Work_Role~.)+
          ggtitle("infrequency scores of respondents") +
@@ -406,27 +421,28 @@ server <- function(input, output) {
          theme(strip.text = element_text(size=12, color="blue"))
      })
      
-     output$plot4 <- renderPlot ({
+     #Correlation Plot
+     output$plot5 <- renderPlot ({
                 corrplot(cor(df_revised_scored() %>%
                              select(ID, Scale, Score) %>%
                              pivot_wider(names_from=Scale, values_from = Score) %>%
                              ungroup() %>% 
                              dplyr::select(-ID, -Work_Role)),
                       method="color", order="hclust", type="full", addrect=6, cl.lim=c(-1,1), 
-                      addCoef.col="black", rect.col="green", diag=FALSE, number.digits=1, number.font=.5 , number.cex=.5, tl.cex=.5)
+                      addCoef.col="black", rect.col="green", diag=FALSE, number.digits=1, number.font=.7 , number.cex=.7, tl.cex=.9)
      })
 
+     #Scales with significant differences between groups
      output$metric <- renderValueBox ({
        valueBox(stat_test() %>% filter(p<input$pvalue) %>% count(), 
                 subtitle = "#Scales with Group Difference",
                 color=if_else(stat_test() %>% filter(p<input$pvalue) %>% count() >= 3, "lime", if_else(stat_test() %>% filter(p<input$pvalue) %>% count()>= 1, "green", "red")) )
         })
      
-     output$print <- renderPrint ({
-         stat_test() %>% filter(p<input$pvalue) %>% select(Scale) 
-     })
-     
-     output$table2 <- render_gt ({ df_rawscore3 %>% 
+
+     #Table of count of sample size
+     output$table <- render_gt ({ 
+       df_rawscore4 %>% 
          filter(Miss_P <= input$miss_limit) %>% 
          filter(infreq <= input$infreq_limit) %>% 
              group_by(Work_Role) %>% 
@@ -436,28 +452,68 @@ server <- function(input, output) {
          tab_header(title=md("adjusted sample size for factor analysis"))
      })
      
-     output$table <- render_gt({
-     df_efa() %>% 
-            left_join(sig_scales()) %>% 
-             mutate(Loading = round(Loading, 2)) %>%
-             left_join(item_stats) %>% 
-             arrange(abs(Loading)) %>% 
-             select (Scale, Trait, Question, Loading, Mean, sd, Content)  %>% 
+   
+     
+     #Random Forest Modeling
+     df_model <- reactive({
+       df_rawscore4 %>% 
+       filter(Miss_P <= input$miss_limit) %>% 
+       filter(infreq <= input$infreq_limit) %>% 
+       select(Work_Role, Q1_A_1:Q21_A_16) %>% 
+       mutate_at(vars(Q1_A_1:Q21_A_16), scale) %>% 
+       mutate(Work_Role = as.factor(Work_Role))
+     })
+     
+     set.seed(103)
+     #Random Forest Model
+     rfmodel <- reactive({
+       randomForest(Work_Role ~ ., data = df_model(), ntree = 500, mtry = 12, importance = TRUE, proximity=TRUE)
+     })
+   
+     importance <- reactive({
+       rfmodel()$importance %>% as.data.frame() %>% 
+       rownames_to_column("Question") %>% select(Question, MeanDecreaseAccuracy) 
+     })
+     
+    minImportance <- reactive ({
+       min(importance()$MeanDecreaseAccuracy)
+     })
+     
+     rangeImportance <- reactive ({
+       diff(range(importance()$MeanDecreaseAccuracy))
+     })
+     
+     importance2 <- reactive ({
+       importance() %>% group_by(Question) %>% 
+       mutate(PredValue = (MeanDecreaseAccuracy+abs(minImportance()))/rangeImportance()) %>% 
+       mutate(PredValue = if_else(PredValue>.8, "A", if_else(PredValue>.6, "B", if_else(PredValue>.4, "C", if_else(PredValue>.2, "D", "F" )))))
+     })
+     
+     #Question Table
+     output$table2 <- render_gt({
+       df_efa() %>% 
+         left_join(sig_scales()) %>%
+         mutate(Loading = round(Loading, 2)) %>%
+         left_join(item_stats) %>% 
+         left_join(importance2(), by="Question") %>% 
+         arrange(abs(p)) %>% 
+         select (Scale, Trait, Question, Loading, Mean, sd, PredValue, Content)  %>% 
          gt(groupname_col = "Scale", rowname_col="Question") %>% 
-         tab_spanner(label="item metrics", columns=matches("Loading|Mean|sd")) %>% 
+         tab_spanner(label="item metrics", columns=matches("Loading|Mean|sd|PredValue")) %>% 
          tab_header(
            title=md("Table of Scales and Items for Revised Questionnaire") )
      })
      
+     #Download Button    
      output$downloadData <- downloadHandler(
-     filename = function () {
+       filename = function () {
          paste("Questionnaire_Refined", "csv", sep=".") 
-     },
-     content=function(file) {
+       },
+       content=function(file) {
          write.csv(df_efa() %>% mutate(Loading = round(Loading, 2)) %>% 
-                       select (Scale, Trait, Question, Loading, Content) %>%
-                       arrange(Scale), file )
-     })
+                     select (Scale, Trait, Question, Loading, Content) %>%
+                     arrange(Scale), file )
+       })
 
  }
 

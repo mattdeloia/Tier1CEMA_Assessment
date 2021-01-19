@@ -184,30 +184,29 @@ columnsToReverse <-  c('Q10_A_16','Q10_A_17','Q10_A_18','Q10_A_19','Q10_A_20',
 df_rawscore2[,columnsToReverse] <- 6-df_rawscore2[, columnsToReverse]  #reverse scoring requires subtracting from number 6 (one more than max score of 5)
 
 #Exploration of Non-purposeful responses and determination of infrequency of responses based on False Keyed (High Endorsement) and True Keyed (Low Endorsement) items
-item_stats <- df_rawscore2 %>%
-        filter(Miss_P< miss_limit) %>%
-        select(ID, Q1_A_1:Q21_A_16) %>%
-        gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>%
-        summarySE(groupvars = "Question", measurevar = "Score", na.rm = TRUE) %>% arrange(Score) %>%
-        select(Question, Score, sd)
-item_stats <- rename("Mean" = "Score", item_stats)  
-
-df_infreq <-  df_rawscore2 %>% 
-        group_by(ID) %>% 
-        mutate(infreq= .5*(6-mean(c(Q22_A_1, Q1_A_5, Q22_A_4, Q3_A_6, Q1_A_1, Q17_A_4),na.rm = TRUE )) +  #highest response averages
-        .5*(mean(c(Q21_A_13, Q15_A_5, Q8_A_3, Q10_A_23, Q12_A_3, Q14_A_4), na.rm=TRUE)))  %>%  #lowest response averages
-        select(ID,infreq) %>% ungroup() %>% 
-        mutate_at (vars(infreq), scale) #lower infreq is better
-
-df_infreq %>% ggplot() + 
-  geom_boxplot(aes(y=infreq)) #boxplot of infreq scale
+#Infrequency of response calculation
+easy_mean <- item_stats %>%   #Average score of 20 easiest questions
+  filter(Rank<=10) %>% select(Mean)
+easy_mean <- mean(easy_mean$Mean, na.rm = TRUE)
 
 #Imputation of mean values for personality items by work role   
 df_rawscore2_a <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_1" ) ) %>% 
-  mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), round(median(.x, na.rm = TRUE),0), .x)) 
+  mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), median(.x, na.rm = TRUE), .x)) 
 df_rawscore2_b <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_Other"))  %>% 
-  mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), round(median(.x, na.rm = TRUE),0), .x))        
-df_rawscore3 <- rbind(df_rawscore2_a, df_rawscore2_b) %>% filter(Miss_P < miss_limit) #bind together the Tier 1 and the Tier 2/3/4 dataframes
+  mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), median(.x, na.rm = TRUE), .x))        
+df_rawscore3 <- rbind(df_rawscore2_a, df_rawscore2_b) #bind together the Tier 1 and the Tier 2/3/4 dataframes
+
+df_infreq <-  
+  df_rawscore3 %>% 
+  select(ID, Q1_A_1:Q21_A_16) %>% 
+  gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>% 
+  left_join(item_stats) %>% 
+  filter(Rank<=10) %>% ungroup() %>% 
+  group_by(ID)  %>% 
+  summarise(infreq= abs(easy_mean-mean(Score, na.rm = TRUE))) #lower infreq is better  
+
+df_rawscore4 <- df_rawscore3 %>% left_join(df_infreq, by="ID")
+
 
 df_rawscore2 %>% 
   mutate(FilterIn = if_else(Miss_P<=.20, "Y", "N")) %>%
@@ -215,8 +214,8 @@ df_rawscore2 %>%
 
 #Partial Credit Model for scoring personality items
 #df_test_pcm <- read_xlsx("TestMatrix.xlsx")
-df_rawscore_PCM  <- df_rawscore3 %>% select(Q21_A_1:Q21_A_15)
-df_rawscore_PCM2 <- df_rawscore3 %>% select(Q1_A_1:Q21_A_15) %>% rbind(df_rawscore_PCM)
+df_rawscore_PCM  <- df_rawscore4 %>% select(Q21_A_1:Q21_A_15)
+df_rawscore_PCM2 <- df_rawscore4 %>% select(Q1_A_1:Q21_A_15) %>% rbind(df_rawscore_PCM)
   
 PC_data <- (df_rawscore_PCM-1) %>% as.matrix()
 summary(PC_data)
@@ -299,7 +298,7 @@ scores
 
 #Scoring Personality: average response on likert scale
 #Scoring Cognitive Test: percent correct by test type
-df_scored <- df_rawscore3 %>% 
+df_scored <- df_rawscore4 %>% 
         group_by (ID) %>% 
         mutate(
         Problem_Solving = mean(c(Q1_A_1, Q1_A_2, Q1_A_3, Q1_A_4, Q1_A_5), na.rm = TRUE),

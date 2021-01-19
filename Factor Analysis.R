@@ -12,7 +12,7 @@ library(readxl)
 library(gt)
 
 #Remove rows with missing values and keep only complete cases
-efa_data <- df_rawscore3 %>% select(Q1_A_1:Q21_A_15)
+efa_data <- df_rawscore4 %>% select(Q1_A_1:Q21_A_15)
 
 efa_data %>% rownames_to_column ("ID") %>% count ()
 
@@ -60,7 +60,7 @@ df_efa <- factors_data[["loadings"]] %>%
   select(-Item, -Rank, -LoadRank )
 
 #Scoring by new scale construct
-df_revised_scored <- df_rawscore3 %>% select(ID, Work_Role, Rank, Q1_A_1:Q21_A_16) %>% 
+df_revised_scored <- df_rawscore4 %>% select(ID, Work_Role, Rank, Q1_A_1:Q21_A_16) %>% 
   gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>% 
   left_join(df_efa, by="Question") %>% 
   select(Scale, ID:Question, Score) %>% 
@@ -154,3 +154,33 @@ df_efa %>%
   tab_header(
     title=md("Table of Scales and Items for Revised Questionnaire") )
                       
+#missingness plot
+df_rawscore4 %>% 
+  mutate(FilterIn = if_else(Miss_P<=miss_limit, "Y", "N")) %>%
+  ggplot() +
+  geom_histogram(aes(x=Miss_P, fill=FilterIn )) +
+  scale_fill_manual(values=c("tomato", "lightblue")) +
+  geom_vline(xintercept = miss_limit, linetype="dashed", color="red", size=1) +
+  geom_text(aes(x=miss_limit, y=0, angle=90), nudge_y=5, nudge_x=-.01,label= "threshold", size=4) +
+  xlab("missingness percentage") + 
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 12)) +
+  facet_grid(Work_Role~.)+
+  ggtitle("missingness levels of respondents") +
+  theme(legend.title= element_text(color="black", size=10), legend.position = "blank") +
+  theme(strip.text = element_text(size=12, color="blue"))
+
+#infrequency plot
+infreq_limit = .75
+df_rawscore4 %>% 
+  mutate(FilterIn = if_else(infreq<=infreq_limit, "Y", "N")) %>%
+  ggplot() +
+  geom_histogram(aes(x=infreq, fill=FilterIn )) +
+  scale_fill_manual(values=c("tomato", "lightblue")) +
+  geom_vline(xintercept = infreq_limit, linetype="dashed", color="red", size=1) +
+  geom_text(aes(x=infreq_limit, y=0, angle=90), nudge_y=5, nudge_x=-.01,label= "threshold", size=4) +
+  xlab("infrequency score (lower is better)") + 
+  theme(axis.text = element_text(size = 12), axis.title = element_text(size = 12)) +
+  facet_grid(Work_Role~.)+
+  ggtitle("infrequency scores of respondents") +
+  theme(legend.title= element_text(color="black", size=10), legend.position = "blank") +
+  theme(strip.text = element_text(size=12, color="blue"))
