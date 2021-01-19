@@ -6,9 +6,8 @@ library(Hmisc)
 library(corrplot)
 library(eRm)
 library(ltm)
-library(tidyverse)
 library(psych)
-library(corrplot)
+library(tidyverse)
 #Name of datafile download from Verint
 file <- "CyberCompetencies.xlsx"
 
@@ -33,9 +32,8 @@ miss_limit = .20 #percentage of missing data allowed
 
 #count of missing items and standard deviation of responses: Personality
 df_mis_P <-  read_xlsx(file) %>%
-  gather(`1_ProblemSolver (Q1_A_1)`: `21_ToleranceOfAmbiguity (Q21_A_16)`, key=Question, value=Answer)  %>%
-  group_by(`Record ID`) %>% 
-  mutate_at(vars(Answer), likertNum) %>%  
+  gather(`1_ProblemSolver (Q1_A_1)`: `21_ToleranceOfAmbiguity (Q21_A_16)`, key=Question, value=Answer) %>% 
+  dplyr::group_by(`Record ID`) %>% 
   summarise(Miss_P = sum(is.na(Answer))/174)    #174 total Personality items
  
 #count of missing items: Cognitive
@@ -45,6 +43,7 @@ df_mis_C <-  read_xlsx(file) %>%
   summarise(Miss_C = sum(is.na(Answer))/25, 
             sincere=sum(Answer=="I don't know", na.rm = TRUE)/25) #25 total Cognitive items
 
+#Plot of Missing Data
 df_mis_C %>% mutate(Miss_C = Miss_C) %>% #visualization of missing items and count of "I don't know" answers
   select(-`Record ID`) %>% 
   rownames_to_column("ID") %>% 
@@ -65,7 +64,7 @@ df_preprocess <- read_xlsx(file) %>%
         `CEH`       = `FormalCerts (Q58_6)`,
         `CISSP`     = `FormalCerts (Q58_7)`,
         `CISM`        = `FormalCerts (Q58_8)`,
-        `Security+` = `FormalCerts (Q58_9)`,
+        `Security` = `FormalCerts (Q58_9)`,
         `OtherCert` = `FormalCerts (Q58_10)`) %>% 
         mutate(   `OSCP`      = if_else(OSCP =="OSCP", "Yes", "No"),
                   `OSCE`      = if_else(OSCE =="OSCE", "Yes", "No"),
@@ -75,7 +74,7 @@ df_preprocess <- read_xlsx(file) %>%
                   `CEH`       = if_else(CEH =="CEH", "Yes", "No"),
                   `CISSP`     = if_else(CISSP == "CISSP", "Yes", "No"),
                   `CISM`      = if_else(CISM == "CISM", "Yes", "No"), 
-                  `Security+` = if_else(`Security+`=="Security+", "Yes", "No")) %>% 
+                  `Security` = if_else(`Security`=="Security", "Yes", "No")) %>% 
         gather(`Rank (Q70)`:`Hexidecimal (Q69)`, key= "Question", value = "Response" ) %>% #cleaning demographic feature labels
         separate(col = `Question`, into=c("Question", "Question2"),  sep = " ", remove="TRUE") %>% 
         select (-Question2) %>% 
@@ -118,7 +117,6 @@ df_preprocess$Degree <- factor(levels =c("High School", "Associates", "Some Coll
 df_preprocess$GTScore <- gsub("121 or higher", ">120", df_preprocess$GTScore)
 df_preprocess$GTScore <- gsub("120 or lower", "<=120", df_preprocess$GTScore)
 df_preprocess$GTScore <- gsub("N/A or prefer not to report", "not reported", df_preprocess$GTScore)
-
 
 #plot a missmap of raw data
 missmap(df_preprocess %>% filter(Work_Role=="Tier_1") %>%  select(ID: `3D_Q16`, Duration_min) %>% arrange(-Miss_P), rank.order=FALSE, main = "Missing values vs observed")  #Tier1 Missingness
@@ -174,7 +172,7 @@ df_CogItemCorr2 <- df_CogItemCorr %>%
  
 write.csv(df_CogItemCorr2, "CogItem_GuttmanStructure.csv") #Save data matrix showing Guttman Structure
 
-corrplot(cor(df_CogItemCorr2), method="color", order="hclust", type="full", addrect=2, cl.lim=c(-1,1), addCoef.col="black", rect.col="green", diag = FALSE, number.font=1, number.digits = 1, number.cex = .7)  #Corrplot of Cognitive Item Correlations
+corrplot(cor(df_CogItemCorr2), method="color", order="hclust", type="full", addrect=2, cl.lim=c(-1,1), addCoef.col="black", rect.col="green", diag = FALSE, number.font=1, number.digits = 1, number.cex = .6)  #Corrplot of Cognitive Item Correlations
 
 #Reverse Scores for select column 
 df_rawscore2 <- df_rawscore
@@ -190,7 +188,9 @@ item_stats <- df_rawscore2 %>%
         filter(Miss_P< miss_limit) %>%
         select(ID, Q1_A_1:Q21_A_16) %>%
         gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>%
-        summarySE(groupvars = "Question", measurevar = "Score", na.rm = TRUE) %>% arrange(Score)
+        summarySE(groupvars = "Question", measurevar = "Score", na.rm = TRUE) %>% arrange(Score) %>%
+        select(Question, Score, sd)
+item_stats <- rename("Mean" = "Score", item_stats)  
 
 df_infreq <-  df_rawscore2 %>% 
         group_by(ID) %>% 
@@ -202,12 +202,38 @@ df_infreq <-  df_rawscore2 %>%
 df_infreq %>% ggplot() + 
   geom_boxplot(aes(y=infreq)) #boxplot of infreq scale
 
-# #Imputation of mean values for personality items by work role   
-# df_rawscore2_a <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_1" ) ) %>% #Tier 1 group
-#         mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) #personality items
-# df_rawscore2_b <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_2", "Tier_3", "Tier_4"))  %>% #Tier 2, 3, & 4 group
-#         mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) #personality items        
-# df_rawscore3 <- rbind(df_rawscore2_a, df_rawscore2_b) #bind together the Tier 1 and the Tier 2/3/4 dataframes
+#Imputation of mean values for personality items by work role   
+df_rawscore2_a <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_1" ) ) %>% 
+  mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), round(median(.x, na.rm = TRUE),0), .x)) 
+df_rawscore2_b <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_Other"))  %>% 
+  mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), round(median(.x, na.rm = TRUE),0), .x))        
+df_rawscore3 <- rbind(df_rawscore2_a, df_rawscore2_b) %>% filter(Miss_P < miss_limit) #bind together the Tier 1 and the Tier 2/3/4 dataframes
+
+df_rawscore2 %>% 
+  mutate(FilterIn = if_else(Miss_P<=.20, "Y", "N")) %>%
+  group_by(Work_Role, FilterIn, Miss_P) %>% summarise(count=n())
+
+#Partial Credit Model for scoring personality items
+#df_test_pcm <- read_xlsx("TestMatrix.xlsx")
+df_rawscore_PCM  <- df_rawscore3 %>% select(Q21_A_1:Q21_A_15)
+df_rawscore_PCM2 <- df_rawscore3 %>% select(Q1_A_1:Q21_A_15) %>% rbind(df_rawscore_PCM)
+  
+PC_data <- (df_rawscore_PCM-1) %>% as.matrix()
+summary(PC_data)
+PC_model <- PCM(PC_data)
+summary(PC_model)
+  
+### Examine item difficulty values:
+item.estimates <- thresholds(PC_model)
+item.estimates
+
+# Standard errors for theta estimates:
+person.locations.estimate <- person.parameter(PC_model)
+summary(person.locations.estimate)
+
+# Build a table for person locations
+person_theta <- person.locations.estimate$theta.table
+person_theta
 
 #Rasch scoring and analysis of 25 cognitive questions
 df_Rasch <- df_rawscore2 %>% 
@@ -273,7 +299,7 @@ scores
 
 #Scoring Personality: average response on likert scale
 #Scoring Cognitive Test: percent correct by test type
-df_scored <- df_rawscore2 %>% 
+df_scored <- df_rawscore3 %>% 
         group_by (ID) %>% 
         mutate(
         Problem_Solving = mean(c(Q1_A_1, Q1_A_2, Q1_A_3, Q1_A_4, Q1_A_5), na.rm = TRUE),
@@ -316,6 +342,11 @@ df_scored <- df_rawscore2 %>%
                 Verbal_Q14, Verbal_Q16, Verbal_Q17, Verbal_Q32, Verbal_Q4), na.rm = TRUE )) %>%
         left_join(df_Rasch2, by="ID") #join in Rasch scores for proficiency based on 25 cognitive items
 
+df_scored_b <- df_scored %>% select(Problem_Solving:Tolerance) %>% column_to_rownames("ID") 
+df_hclust <- data.frame(t(df_scored_b)) %>% scale()
+df_hclust2  <- hclust(dist(df_hclust))
+df_hclust2 %>% ggdendrogram(rotate=TRUE, theme_dendro=TRUE, size=1) + ggsave("Dimension_Dendrogram.pdf", width=8.5, height=11, units = "in")
+
 #Visualizations #####################################################################################
 #Comparison of Raw Score% and Theta
 df_scored %>% filter(Miss_C<miss_limit) %>% 
@@ -354,10 +385,10 @@ df_scored %>% filter(Miss_C<miss_limit) %>% select(ID, Analogies:Cog_tot)  %>%
 dfcorrplot <-  df_scored %>%  #dataframe of select features in a matrix
         filter(Miss_P<miss_limit) %>% 
         select(ID, Problem_Solving:Tolerance) %>%
-        column_to_rownames("ID") %>% as.data.frame()
+        column_to_rownames("ID") %>% as.data.frame() %>% na.omit()
 
 corrplot(cor(dfcorrplot), method="color", order="hclust", type="full", addrect=10, cl.lim=c(-1,1), 
-         addCoef.col="black", rect.col="green", diag=FALSE, number.digits=2, number.font=.5 , number.cex=.5, tl.cex=.5) #corrplot personality items
+         addCoef.col="black", rect.col="green", diag=FALSE, number.digits=1, number.font=.5 , number.cex=.5, tl.cex=.5) #corrplot personality items
 
 #Correlation Plot Cognitive
 dfcorrplot2 <-  df_scored %>% 
@@ -403,7 +434,7 @@ df_scored2_summary %>% left_join(df_scored2_order)  %>%
 #Scale Cognitive scored data
 df_scored3 <- df_scored %>% filter(Miss_C < miss_limit) %>% ungroup() %>% 
         select(ID, Work_Role, Analogies:Verbal, Cog_tot, Proficiency) %>% 
-        mutate_at(vars(Analogies:Verbal), scale) %>% #scale function
+        mutate_at(vars(Analogies:Cog_tot), scale) %>% #scale function
         gather(Analogies:Proficiency, key=Test, value=Score) 
 
 df_scored3_summary <-  df_scored3  %>%  #compute summary statistics for all work roles
@@ -427,7 +458,7 @@ df_scored3_summary %>% left_join(df_scored3_order)  %>%
         coord_flip() + xlab(" ") + ylab("overall proficiency & test mean scaled score ") +
         scale_color_manual(values=c("red", "darkgray", "darkgray", "darkgray")) +
         theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
-        ylim(-2,2) +
+        ylim(-1.5,1.5) +
         ggtitle("Cognitive Scores by Work Role") +
         ggsave("CognitveScores_WorkRole.jpg", width = 10, height = 6, units = "in" ) #save to folder
 

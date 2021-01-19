@@ -66,8 +66,8 @@ df_demographic %>%
 
 #Certifications
 df_demographic %>% 
-            select(ID, Work_Role, OSCP:`Security+`) %>%
-            gather(OSCP:`Security+`, key=Cert, value=n) %>% 
+            select(ID, Work_Role, OSCP:`Security`) %>%
+            gather(OSCP:`Security`, key=Cert, value=n) %>% 
             mutate(n=if_else(n=="Yes", 1, 0)) %>% 
             group_by(Work_Role, Cert) %>%
             summarise(n=sum(n)) %>% 
@@ -82,7 +82,8 @@ df_demographic %>%
   theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
   ylab("percentage of respondents") + xlab("") +
   coord_flip() +
-  ggtitle("Certifications by Work Role")
+  ggtitle("Certifications by Work Role") +
+  ggsave("Certifications.jpg", width = 4, height = 6, units = "in" )
             
 #GT Score
 df_demographic %>% 
@@ -118,7 +119,7 @@ df_hobbies %>%
   ylab("percent of respondents") +
   xlab("") +
   ylim(0,1) +
-  coord_flip()
+  coord_flip() + ggsave("Hobbies.jpg", width = 4, height = 6, units = "in" )
 
 #Hobbies2
 df_hobbies2 <- df_demographic %>% 
@@ -137,7 +138,7 @@ df_hobbies2 %>% ggplot(aes(x=reorder(Response, n, FUN=mean), y=n)) +
   coord_flip() 
 
 #Random Forest Modeling################################
-set.seed(102)
+set.seed(103)
 df_randomforest <- df_demographic %>% 
   select(-ID, -CPU_type,-CPU_OS, -Game_Platform, -Game_type, -OtherCert ) %>% na.omit()
 df_randomforest[1:24] <- lapply(df_randomforest[1:24], factor)
@@ -175,5 +176,5 @@ randforest_report2 <-   rownames_to_column(randforest_report, var="Feature") %>%
   select (Model, Feature, Importance) %>% 
   arrange(-Importance)
 
-model_crossvalid <- train(Work_Role ~ ., data = df_randomforest, method="rf", trControl = trainControl(method ="cv", number = 5, verboseIter=TRUE))
-model_crossvalid
+# model_crossvalid <- train(Work_Role ~ ., data = df_randomforest, method="rf", trControl = trainControl(method ="cv", number = 5, verboseIter=TRUE))
+#model_crossvalid
