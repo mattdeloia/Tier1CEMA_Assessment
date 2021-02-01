@@ -162,3 +162,7 @@ Tier\_4
 ## Completion Duration (minutes)
 
 ![](Tier1Assessment_Summary_files/figure-gfm/duration_plot-1.png)<!-- -->
+
+## Participants by Date
+
+![](Tier1Assessment_Summary_files/figure-gfm/participant_plot-1.png)<!-- -->
