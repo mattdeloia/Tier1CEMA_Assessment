@@ -103,7 +103,7 @@ df_preprocess <- read_xlsx(file) %>%
         arrange(Work_Role) %>% #arrange data by work role
         rownames_to_column("ID") %>% #add a new ID label beginning with 1
         select(-`Record ID`) %>% #remove Verint ID label
-        select(ID,Miss_P, Miss_C, sincere, Duration_min, Rank:`3D_Q16`) #select features to carry forward in analysis
+        select(ID,Miss_P, Miss_C, sincere, Duration_min,Started, Completed, Rank:`3D_Q16`) #select features to carry forward in analysis
 
 #Replace Work roles with simple categories
 df_preprocess$Work_Role <-  gsub("Tier-1 - Remote Operator|Tier-1 - Capability Developer|Tier-1 - Exploitation Analyst", "Tier_1", df_preprocess$Work_Role)
@@ -157,4 +157,21 @@ df_preprocess %>% filter(Duration_min>0) %>% ggplot() + geom_density(aes(x=Durat
         geom_vline(xintercept = median, linetype="dashed", color="red") + ylab("") +
         geom_text(aes(x=median, y=0), label=round(median,1)) +
         xlab("Questionnaire Duration (min)  *median labeled") + xlim(0,125)
+```
+
+## Participants by Date
+
+```{r participant_plot, echo=FALSE, message=FALSE, warning=FALSE}
+
+# gather(Started:Completed, key=Category, value=Date) %>%
+df_preprocess %>% select(ID, Started, Completed) %>% 
+  gather(Started:Completed, key=Category, value=Date) %>%
+  mutate(Date= as.Date(Date, "ymd")) %>% 
+  group_by(Date, Category) %>% summarise(n=n()) %>%
+  ggplot() +
+  geom_col(aes(x=Date, y=n, fill=Category)) +
+  facet_grid(Category~.) +
+  scale_fill_manual(values=c("green", "darkgray")) +
+  geom_text(aes(x=Date, y=n, label=n), nudge_y=2, size=3) +
+  theme(legend.position = "top")
 ```

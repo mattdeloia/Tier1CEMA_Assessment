@@ -14,11 +14,13 @@ library(cluster)    # clustering algorithms
 library(factoextra) # clustering visualization
 library(dendextend) # for comparing two dendrograms
 library(ggdendro)
-library(tidyverse)
 library(WrightMap)
 library(rstatix)
 library(gt)
 library(randomForest)
+#library(bslib)
+library(thematic)
+library(tidyverse)
 
 # load and tidy data
 df_question <- read_xlsx("ScaleQuestions.xlsx")
@@ -199,89 +201,87 @@ df_rawscore4 <- df_rawscore3 %>% left_join(df_infreq, by="ID")
 # Define UI for application that draws a histogram
 ui <- navbarPage(
     theme = shinytheme("united"),
-    title("Factor Analysis Tool"),
+    title="Factor Analysis Tool",
     header=tagList(useShinydashboard()),
     position = "fixed-top",
 
     tabPanel("Factor Exploration", icon = icon ("flag-usa"), br(), br(), br(),
 
            box(title="Model variables and Group Differences", status="primary", solidHeader = TRUE, width = 4,
-               
+
               sliderInput("factors",
                       "Number of factors to explore:",
                       min = 1,
                       max = 27,
                       value = 12,
-                      step=1),
-  
+                      step = 1),
+
               sliderInput("items",
                       "Maximum number of items per factor:",
                       min = 1,
                       max = 12,
                       value = 8,
-                      step=1),
-        
+                      step = 1),
+
               sliderInput("pvalue",
                        "Confidence level for difference in means:",
                        min = .01,
                        max = .25,
                        value = .10,
-                       step=.01),
-              
-              valueBoxOutput("metric", width= 4),
-              
+                       step = .01),
+
+              valueBoxOutput("metric", width = 4),
+
               gt_output("table")
-           
+
            ),
-    
-          
+
          box(title="Missingness of Data", status="primary", solidHeader = TRUE, width = 4,
-            
+
              sliderInput("miss_limit",
                          "Respondent missingness threshold percentage:",
                          min = 0,
                          max = 1,
                          value = .25,
-                         step=.01),
-             
+                         step = .01),
+
             plotOutput("plot1")
            ),
-        
+
           box(title="Infrequency of Responses", status="primary", solidHeader = TRUE, width = 4,
-              
-              
+
+
               sliderInput("infreq_limit",
                           "Infrequency threshold value (based on high response ave):",
                           min = 0,
                           max = 2,
                           value = .75,
-                          step= .05),
-             
+                          step = .05),
+
              plotOutput("plot2")
          ),
-        
-           plotOutput("plot3", height="600px")
+
+           plotOutput("plot3", height = "600px")
       ),
            
        tabPanel("Group Comparison", icon = icon ("chart-bar"), br(), br(), br(),
-            
+
             box(title="Group Comparison - Mean Scores", status="primary", solidHeader = TRUE, width = 4,
-                
-                plotOutput("plot4", height="600px")),
-            
+
+                plotOutput("plot4", height = "600px")),
+
             box(title="Scale Correlations and Clustering", status="primary", solidHeader = TRUE, width = 8,
-                
-                plotOutput("plot5", height="600px"))
+
+                plotOutput("plot5", height = "600px"))
       ),
-    
+
         tabPanel("Questionnaire", icon = icon ("table"), br(), br(), br(),
-             
+
                  downloadButton("downloadData", "Download Data"),
-             
+
                  gt_output("table2"))
     )
     
-
 # Define server logic required to draw a histogram
 server <- function(input, output) {
     
@@ -358,6 +358,7 @@ server <- function(input, output) {
             summarySE(measurevar = "Loading", groupvars = c("Scale", "Trait", "Significant", "p" )) %>%
             ungroup() %>% group_by(Scale) %>% drop_na(Scale) %>% 
             mutate(Scale = factor(Scale, levels=sig_scales()$Scale)) %>% 
+            mutate(Trait = as_factor(Trait)) %>% 
             ggplot() + 
             geom_col (aes(x=Trait, y=N, fill=Significant)) + 
             scale_fill_manual(values=c("darkgray", "skyblue")) +
@@ -499,6 +500,9 @@ server <- function(input, output) {
          arrange(abs(p)) %>% 
          select (Scale, Trait, Question, Loading, Mean, sd, PredValue, Content)  %>% 
          gt(groupname_col = "Scale", rowname_col="Question") %>% 
+         tab_style(style = list (
+           cell_text(color = "blue")),
+           locations = cells_body(columns= vars(PredValue), rows = if_else(PredValue %in% c("A", "B", "C"), TRUE, FALSE))) %>% 
          tab_spanner(label="item metrics", columns=matches("Loading|Mean|sd|PredValue")) %>% 
          tab_header(
            title=md("Table of Scales and Items for Revised Questionnaire") )

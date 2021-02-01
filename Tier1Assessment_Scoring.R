@@ -8,6 +8,7 @@ library(eRm)
 library(ltm)
 library(psych)
 library(tidyverse)
+library(ggdendro)
 #Name of datafile download from Verint
 file <- "CyberCompetencies.xlsx"
 
@@ -184,6 +185,16 @@ columnsToReverse <-  c('Q10_A_16','Q10_A_17','Q10_A_18','Q10_A_19','Q10_A_20',
 df_rawscore2[,columnsToReverse] <- 6-df_rawscore2[, columnsToReverse]  #reverse scoring requires subtracting from number 6 (one more than max score of 5)
 
 #Exploration of Non-purposeful responses and determination of infrequency of responses based on False Keyed (High Endorsement) and True Keyed (Low Endorsement) items
+#Item statistics of difficulty (mean) and standard deviation
+item_stats <- df_rawscore2 %>%
+  select(ID, Q1_A_1:Q21_A_16) %>%
+  gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>%
+  summarySE(groupvars = "Question", measurevar = "Score", na.rm = TRUE) %>% arrange(Score) %>%
+  select(Question, Score, sd) %>% mutate(Score = round(Score, 1), sd=round(sd, 1)) %>% 
+  mutate(Rank = rank (-Score, ties.method = "random" ) ) #Rank order questions from easiest to hardest
+
+item_stats <- rename("Mean" = "Score", item_stats)
+
 #Infrequency of response calculation
 easy_mean <- item_stats %>%   #Average score of 20 easiest questions
   filter(Rank<=10) %>% select(Mean)
@@ -388,6 +399,8 @@ dfcorrplot <-  df_scored %>%  #dataframe of select features in a matrix
 
 corrplot(cor(dfcorrplot), method="color", order="hclust", type="full", addrect=10, cl.lim=c(-1,1), 
          addCoef.col="black", rect.col="green", diag=FALSE, number.digits=1, number.font=.5 , number.cex=.5, tl.cex=.5) #corrplot personality items
+
+hclust(dist(data.frame(t(dfcorrplot)))) %>% ggdendrogram(rotate=TRUE)
 
 #Correlation Plot Cognitive
 dfcorrplot2 <-  df_scored %>% 

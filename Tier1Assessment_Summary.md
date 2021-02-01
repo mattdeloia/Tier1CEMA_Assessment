@@ -109,7 +109,7 @@ Tier\_3
 
 <td style="text-align:right;">
 
-6
+8
 
 </td>
 
@@ -121,7 +121,7 @@ Tier\_3
 
 <td style="text-align:right;">
 
-17
+19
 
 </td>
 
@@ -143,13 +143,13 @@ Tier\_4
 
 <td style="text-align:right;">
 
-14
+17
 
 </td>
 
 <td style="text-align:right;">
 
-22
+25
 
 </td>
 
