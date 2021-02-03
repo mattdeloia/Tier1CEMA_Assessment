@@ -352,9 +352,9 @@ df_scored <- df_rawscore4 %>%
                 Verbal_Q14, Verbal_Q16, Verbal_Q17, Verbal_Q32, Verbal_Q4), na.rm = TRUE )) %>%
         left_join(df_Rasch2, by="ID") #join in Rasch scores for proficiency based on 25 cognitive items
 
-df_scored_b <- df_scored %>% select(Problem_Solving:Tolerance) %>% column_to_rownames("ID") 
-df_hclust <- data.frame(t(df_scored_b)) %>% scale()
-df_hclust2  <- hclust(dist(df_hclust))
+df_hclust <- df_scored %>% select(Problem_Solving:Tolerance) %>% column_to_rownames("ID") 
+df_hclust_b <- data.frame(t(df_hclust)) %>% scale()
+df_hclust2  <- hclust(dist(df_hclust_b))
 df_hclust2 %>% ggdendrogram(rotate=TRUE, theme_dendro=TRUE, size=1) + ggsave("Dimension_Dendrogram.pdf", width=8.5, height=11, units = "in")
 
 #Visualizations #####################################################################################
