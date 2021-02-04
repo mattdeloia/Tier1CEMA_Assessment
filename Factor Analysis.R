@@ -62,7 +62,8 @@ df_efa <- factors_data[["loadings"]] %>%
 #Scoring by new scale construct
 df_revised_scored <- df_rawscore4 %>% select(ID, Work_Role, Rank, Q1_A_1:Q21_A_16) %>% 
   gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>% 
-  left_join(df_efa, by="Question") %>% 
+  left_join(df_efa, by="Question") %>%
+  mutate(Score = if_else(Loading>0, Score, 6-Score) ) %>% #reverse scoring based on item loading
   select(Scale, ID:Question, Score) %>% 
   drop_na(Scale)%>% 
   group_by(ID, Work_Role, Scale) %>% 

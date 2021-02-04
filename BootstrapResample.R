@@ -9,8 +9,7 @@ Tier1_resample <- df_scored %>% ungroup() %>%
   specify(response=Problem_Solving) %>% 
   generate(reps=1000, type="bootstrap") %>% 
   calculate(stat="mean")
-  summarise(stat = mean(Problem_Solving))
-  
+
 
 Tier1_percentile_ci <- Tier1_resample %>% get_confidence_interval()
 
@@ -105,8 +104,8 @@ hypothesisplot <- function (personalitytrait, missingness, confidence) {
                                 generate(reps = 1000, type = "bootstrap") %>% 
                                 calculate (stat = "diff in means", order = c("Tier_1", "Tier_Other")) %>% 
                                 get_confidence_interval(level = confidence, type = "percentile")) +
-    geom_vline(xintercept = 0, linetype="dashed", color= "red", size = 1.5)
+    geom_vline(xintercept = 0, linetype="dashed", color= "red", size = 1.5) + labs(subtitle = personalitytrait)
 }
 
-hypothesisplot("Problem_Solving", .20, .99)
+hypothesisplot("Problem_Solving", .20, .95)
 

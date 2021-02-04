@@ -243,7 +243,7 @@ df_scored <- df_rawscore4 %>%
                           `3D_Q16`, `3D_Q24`, `3D_Q29`, `3D_Q42`, `3D_Q58`,
                           Verbal_Q14, Verbal_Q16, Verbal_Q17, Verbal_Q32, Verbal_Q4), na.rm = TRUE ))
 
-personalityscales <- c("Problem_Solving", "Depth_Thought", "Mental_Quickness", "Need_Cognition", "Love_Learning")
+personalityscales <- c("Problem_Solving", "Depth_Thought", "Mental_Quickness", "Need_Cognition", "Love_Learning", "Creativity","Concientiousness", "Orderliness", "Deprivation_Sensitivity", "Joyous_Exploration", "Social_Curiosity", "Stress_Tolerance", "Thrill_Seeking", "Interpersonal_Understanding", "Self_Confidence", "Suspension_Judgement", "Self_Discipline", "Industriness", "Enthusiasm", "Flow_Proneness", "Cyberwork_Confidence", "General_SelfEfficacy", "Resilience", "Teamwork",  "Leadership", "Intellectual_Openness", "Tolerance"    )
 
 hypothesisplot <- function (personalitytrait, missingness, infrequency, confidence) {
   visualise(df_scored %>%
@@ -261,7 +261,8 @@ hypothesisplot <- function (personalitytrait, missingness, infrequency, confiden
                                 generate(reps = 1000, type = "bootstrap") %>% 
                                 calculate (stat = "diff in means", order = c("Tier_1", "Tier_Other")) %>% 
                                 get_confidence_interval(level = confidence, type = "percentile")) +
-    geom_vline(xintercept = 0, linetype="dashed", color= "red", size = 1.5)
+    geom_vline(xintercept = 0, linetype="dashed", color= "red", size = 1.5)  +
+    labs(subtitle = personalitytrait)
 }
 
 p_value <- function(personalitytrait, missingness, infrequency) {
@@ -274,19 +275,18 @@ p_value <- function(personalitytrait, missingness, infrequency) {
     generate(reps = 1000, type = "permute") %>% 
     calculate (stat = "diff in means", order = c("Tier_1", "Tier_Other")) %>% 
     get_p_value(obs_stat = df_scored %>%  
-                  filter(Miss_P < missingness) %>%
+                  filter(Miss_P < missingness, infreq < infrequency) %>%
                   gather(Problem_Solving:Tolerance, key=Trait, value=Score) %>% 
                   filter(Trait==personalitytrait) %>% 
                   specify(formula = Score ~ Work_Role) %>%  
                   calculate (stat = "diff in means", order = c("Tier_1", "Tier_Other")), 
-                direction = if_else(df_scored %>%  
+                direction = if_else((df_scored %>%  
                                       filter(Miss_P < missingness, infreq < infrequency) %>%
                                       gather(Problem_Solving:Tolerance, key=Trait, value=Score) %>% 
                                       filter(Trait==personalitytrait) %>% 
                                       specify(formula = Score ~ Work_Role) %>% 
-                                      calculate (stat = "diff in means", order = c("Tier_1", "Tier_Other"))>0, "right", "left"))
+                                      calculate (stat = "diff in means", order = c("Tier_1", "Tier_Other")))>0, "right", "left"))
 }
-
 
 # Define UI for application that draws a histogram
 ui <- navbarPage(
@@ -329,11 +329,13 @@ ui <- navbarPage(
              
                )
             ),
+    
+    tabPanel("Group Comparison (Resampling)", icon = icon ("flag-usa"), br(), br(), br(),
                
-             tabPanel("Group Comparison (Resampling)", icon = icon ("flag-usa"), br(), br(), br(),
-                      
-                      box(title="Scale and Confidence", status="primary", solidHeader = TRUE, width = 4,
-                          
+             sidebarLayout (
+               
+               sidebarPanel (
+               
                           sliderInput("confidenceinterval", "CI for difference in mu (population):",
                                   min = .90,
                                   max = 1.0,
@@ -342,14 +344,16 @@ ui <- navbarPage(
                       
                       radioButtons("personalitytrait", label = "Personality Scale", choices = personalityscales, selected = "Problem_Solving"),
                       
-                      verbatimTextOutput("trait"),
-                      valueBoxOutput("p_value")),
-                     
-                       box(title="Group Differences", status="primary", solidHeader = TRUE, width = 8, 
+                      verbatimTextOutput("trait") ),
+               
+               mainPanel (
                       
-                      plotOutput("resampleplot"))
+                     
+                      valueBoxOutput("p_value", width=12),
+                      
+                      plotOutput("resampleplot")) 
               
-             ),
+             ) ),
              
           tabPanel("Factor Exploration", icon = icon ("flag-usa"), br(), br(), br(),
 
@@ -450,6 +454,7 @@ server <- function(input, output) {
          df_rawscore3 %>% select(ID, Work_Role, Rank, Q1_A_1:Q21_A_16) %>% 
          gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>% 
          left_join(df_efa(), by="Question") %>% 
+        mutate(Score = if_else(Loading>0, Score, 6-Score) ) %>% #reverse scoring based on item loading
          select(Scale, ID:Question, Score) %>% 
          drop_na(Scale) %>% 
          group_by(ID, Work_Role, Scale) %>% 
@@ -479,13 +484,15 @@ server <- function(input, output) {
     output$plot3 <- renderPlot({
         df_efa () %>% 
             left_join(sig_scales()) %>% 
-            summarySE(measurevar = "Loading", groupvars = c("Scale", "Trait", "Significant", "p" )) %>%
+        mutate(Loading2 = if_else(Loading > 0, "positive", "negative")) %>% 
+            summarySE(measurevar = "Loading", groupvars = c("Scale", "Trait", "Significant", "p", "Loading2" )) %>%
             ungroup() %>% group_by(Scale) %>% drop_na(Scale) %>% 
             mutate(Scale = factor(Scale, levels=sig_scales()$Scale)) %>% 
             mutate(Trait = as_factor(Trait)) %>% 
             ggplot() + 
-            geom_col (aes(x=Trait, y=N, fill=Significant)) + 
-            scale_fill_manual(values=c("darkgray", "skyblue")) +
+            geom_col (aes(x=Trait, y=N, color=Significant, fill=Loading2),alpha=.5) + 
+            scale_color_manual(values=c("gray", "green")) +
+          scale_fill_manual(values=c("red", "darkgray"))+
             xlab("") +
             ylab("count of questions") +
             coord_flip() + 
@@ -627,6 +634,9 @@ server <- function(input, output) {
          tab_style(style = list (
            cell_text(color = "red")),
            locations = cells_body(columns= vars(PredValue), rows = if_else(PredValue %in% c("A", "B", "C"), TRUE, FALSE))) %>% 
+         tab_style(style = list (
+           cell_text(color = "red")),
+           locations = cells_body(columns= vars(Trait), rows = if_else(Loading < 0, TRUE, FALSE))) %>% 
          tab_spanner(label="item metrics", columns=matches("Loading|Mean|sd|PredValue")) %>% 
          tab_header(
            title=md("Table of Scales and Items for Revised Questionnaire") )
@@ -684,7 +694,10 @@ server <- function(input, output) {
     })
      
     output$p_value <- renderValueBox({ 
-      valueBox(round(p_value(input$personalitytrait, input$miss_limit, input$infreq_limit)$p_value,2) , "p value", color="green", width= NULL) 
+      valueBox(round(p_value(input$personalitytrait, input$miss_limit, input$infreq_limit)$p_value,2) ,
+               paste("p value:",input$personalitytrait), 
+               color = if_else(p_value(input$personalitytrait, input$miss_limit, input$infreq_limit)$p_value<=(1-input$confidenceinterval),"green", "red"),
+               width= NULL) 
       })
                                       
      output$trait <- renderPrint({input$personalitytrait})
