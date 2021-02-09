@@ -22,11 +22,11 @@ df_demographic %>%
   left_join(n_Tier) %>% 
   mutate(n=n/n_tot) %>% 
   ggplot(aes(x=Experience, y=n, fill=Work_Role)) + 
-  geom_col() +
-  scale_fill_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
+  geom_col(position = "dodge2") +
+  scale_fill_manual(values=c("lightgreen", "darkgray", "lightgreen", "gray")) +
   theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
   ylab("") + xlab("") +
-  facet_grid(Work_Role~.) +
+ # facet_grid(Work_Role~.) +
   ggtitle("Years Experience Level by Work Role")
 
 
@@ -37,10 +37,11 @@ df_demographic %>%
   summarise(n=n()) %>% 
   left_join(n_Tier) %>% 
   mutate(n=n/n_tot) %>% 
-  ggplot(aes(x=Degree, y=n, color=Work_Role, group=Work_Role)) + 
-  geom_point(size=2) +
+  na.omit(Degree) %>% 
+  ggplot(aes(x=reorder(Degree, -n, fun=mean), y=n, fill=Work_Role, group=Work_Role)) + 
+  geom_col(position="dodge2") +
   geom_line(aes(linetype=Work_Role)) +
-  scale_color_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
+  scale_fill_manual(values=c("red", "lightblue", "lightgreen", "gray")) +
   scale_linetype_manual(values=c("dashed", "blank", "blank", "blank")) +
   theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
   ylab("") + xlab("") +
@@ -58,7 +59,7 @@ df_demographic %>%
   mutate(n=n/n_tot) %>% 
   ggplot(aes(x=Degree, y=n, fill=Work_Role)) + 
   geom_col() +
-  scale_fill_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
+  scale_fill_manual(values=c("red", "lightblue", "lightgreen", "gray")) +
   theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
   ylab("% of Tier group") + xlab("") +
   facet_grid(.~Work_Role) +
@@ -92,9 +93,9 @@ df_demographic %>%
   left_join(n_Tier) %>% 
   mutate(n= n/n_tot) %>% 
   ggplot(aes(x=GTScore, y=n, fill=Work_Role)) + 
-  geom_col () +
+  geom_col (position = "dodge2") +
   scale_fill_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
-  facet_grid(Work_Role~.) +   
+  #facet_grid(Work_Role~.) +   
   theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
   ylab("percentage of respondents") + xlab("") +
   ggtitle("GT Score Categories by Work Role")
@@ -122,31 +123,44 @@ df_hobbies %>%
   coord_flip() + ggsave("Hobbies.jpg", width = 4, height = 6, units = "in" )
 
 #Hobbies2
-df_hobbies2 <- df_demographic %>% 
-  select(ID, CPU_OS, Game_Platform, Game_type) %>% 
+df_demographic %>% 
+  select(ID, Work_Role, CPU_OS, Game_Platform, Game_type) %>% 
   gather(CPU_OS:Game_type, key=Category, value=Response) %>%
-  group_by(Category, Response) %>% 
+  group_by(Work_Role, Category, Response) %>% 
   summarise(n=n()) %>% 
-  na.omit(Category)
-  
-df_hobbies2 %>% ggplot(aes(x=reorder(Response, n, FUN=mean), y=n)) + 
-  geom_col() + 
+  left_join(n_Tier) %>% 
+  mutate(n= n/n_tot) %>%
+  na.omit(Response) %>% 
+  ggplot(aes(x=reorder(Response, n, FUN=mean), y=n, fill=Work_Role)) + 
+  geom_col(position="dodge2") + 
   facet_grid(Category~., scales = "free_y") + 
+  theme(legend.position = "top") +
   xlab("") +
-  ylab("# of respondents") +
+  ylab("percent of respondents") +
   ggtitle("Gaming and computer system preferences (all Tier categories)") +
   coord_flip() 
 
+t_test_calc <- df_demographic %>% select(Work_Role, Edit_game) %>% 
+  na.omit() %>% 
+    mutate(Edit_game = if_else(Edit_game=="Yes", 1, 0))
+
+t.test(t_test_calc$Edit_game ~ t_test$Work_Role)
+  
+
+
 #Random Forest Modeling################################
-set.seed(103)
+set.seed(102)
 df_randomforest <- df_demographic %>% 
-  select(-ID, -CPU_type,-CPU_OS, -Game_Platform, -Game_type, -OtherCert ) %>% na.omit()
-df_randomforest[1:24] <- lapply(df_randomforest[1:24], factor)
+  select(-ID, -Rank, -CPU_type,-CPU_OS, -Game_Platform, -Game_type, -OtherCert, -JQR_Proficiency, -Degree ) %>% na.omit()
+df_randomforest[1:21] <- lapply(df_randomforest[1:21], factor)
 # Split into Train and Testation sets
 # Training Set : Testation Set = 75 : 25 (random)
 train <- sample(nrow(df_randomforest), .75*nrow(df_randomforest), replace = FALSE)
 TrainSet <- df_randomforest[train,]
 TestSet <- df_randomforest[-train,]
+
+summary(TrainSet)
+summary(TestSet)
 # Create a Random Forest model with default parameters
 model1 <- randomForest(Work_Role ~ ., data = TrainSet, importance = TRUE)
 model1

@@ -15,7 +15,7 @@ library(factoextra) # clustering visualization
 library(dendextend) # for comparing two dendrograms
 library(ggdendro)
 library(WrightMap)
-library(rstatix)
+
 library(gt)
 library(randomForest)
 #library(bslib)
@@ -24,6 +24,9 @@ library(tidyverse)
 library(moderndive)
 library(skimr)
 library(infer)
+
+library(DT)
+library(rstatix)
 
 # load and tidy data
 df_question <- read_xlsx("ScaleQuestions.xlsx")
@@ -87,17 +90,17 @@ df_preprocess <- read_xlsx(file) %>%
               `Security` = if_else(`Security`=="Security", "Yes", "No")) %>% 
     gather(`Rank (Q70)`:`Hexidecimal (Q69)`, key= "Question", value = "Response" ) %>% #cleaning demographic feature labels
     separate(col = `Question`, into=c("Question", "Question2"),  sep = " ", remove="TRUE") %>% 
-    select (-Question2) %>% 
+    dplyr::select (-Question2) %>% 
     pivot_wider(names_from = Question, values_from = Response) %>% 
     gather(`1_ProblemSolver (Q1_A_1)`: `21_ToleranceOfAmbiguity (Q21_A_16)`, key="Question", value = "Response") %>% #cleaning personality feature labels
     separate(col = `Question`, into=c("Question2", "Question"),  sep = "[(]", remove="TRUE") %>% 
-    select(-Question2) %>% 
+    dplyr::select(-Question2) %>% 
     separate(col = `Question`, into=c("Question", "Question2"),  sep = "[)]", remove="TRUE") %>% 
-    select(-Question2)  %>% 
+    dplyr::select(-Question2)  %>% 
     pivot_wider(names_from = Question, values_from = Response) %>% 
     gather(`Pattern_Q1 (Q23)`:`3D_Q16 (Q47)`, key= "Question", value = "Response" ) %>%  #cleaning cognitive feature labels
     separate(col = `Question`, into=c("Question", "Question2"),  sep = " ", remove="TRUE") %>% 
-    select(-Question2) %>% pivot_wider(names_from = Question, values_from = Response) %>%
+    dplyr::select(-Question2) %>% pivot_wider(names_from = Question, values_from = Response) %>%
     mutate(Duration_min = round((Completed - Started),2)) %>% #calculate questionnaire completion time
     mutate(Duration_min = replace_na(Duration_min, 0)) %>%  
     left_join(df_mis_P, by = "Record ID") %>% #join in missingness stat for Personality features
@@ -105,8 +108,8 @@ df_preprocess <- read_xlsx(file) %>%
     drop_na(Work_Role) %>% #drop rows with no data based on entry to work role
     arrange(Work_Role) %>% #arrange data by work role
     rownames_to_column("ID") %>% #add a new ID label beginning with 1
-    select(-`Record ID`) %>% #remove Verint ID label
-    select(ID,Miss_P, Miss_C, sincere, Duration_min, Rank:`3D_Q16`) #select features to carry forward in analysis
+    dplyr::select(-`Record ID`) %>% #remove Verint ID label
+    dplyr::select(ID,Miss_P, Miss_C, sincere, Duration_min, Rank:`3D_Q16`) #select features to carry forward in analysis
 
 #Replace Work roles with simple categories
 df_preprocess$Work_Role <-  gsub("Tier-1 - Remote Operator|Tier-1 - Capability Developer|Tier-1 - Exploitation Analyst", "Tier_1", df_preprocess$Work_Role)
@@ -127,6 +130,13 @@ df_preprocess$Degree <- factor(levels =c("High School", "Associates", "Some Coll
 df_preprocess$GTScore <- gsub("121 or higher", ">120", df_preprocess$GTScore)
 df_preprocess$GTScore <- gsub("120 or lower", "<=120", df_preprocess$GTScore)
 df_preprocess$GTScore <- gsub("N/A or prefer not to report", "not reported", df_preprocess$GTScore)
+
+df_demographic <- df_preprocess %>% dplyr::select (ID,Rank:Hexidecimal)
+n_Tier <- df_demographic %>% group_by(Work_Role) %>% summarise(n_tot=n())
+df_hobbies <- df_demographic %>% 
+  dplyr::select (ID, Work_Role, BuiltCPU, Gaming, Edit_game, Scripts, SOHO, Hexidecimal) %>%
+  gather(BuiltCPU:Hexidecimal, key="Hobby", value="Response") 
+df_hobbies$Response <- replace_na(df_hobbies$Response, "No")
 
 df_rawscore <- df_preprocess %>%   
     mutate_at(vars(`Q1_A_1` : `Q21_A_16`), likertNum) %>% #score likert items
@@ -169,17 +179,17 @@ df_rawscore2[,columnsToReverse] <- 6-df_rawscore2[, columnsToReverse]  #reverse 
 
 #Item statistics of difficulty (mean) and standard deviation
 item_stats <- df_rawscore2 %>%
-    select(ID, Q1_A_1:Q21_A_16) %>%
+    dplyr::select(ID, Q1_A_1:Q21_A_16) %>%
     gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>%
     summarySE(groupvars = "Question", measurevar = "Score", na.rm = TRUE) %>% arrange(Score) %>%
-    select(Question, Score, sd) %>% mutate(Score = round(Score, 1), sd=round(sd, 1)) %>% 
+    dplyr::select(Question, Score, sd) %>% mutate(Score = round(Score, 1), sd=round(sd, 1)) %>% 
     mutate(Rank = rank (-Score, ties.method = "random" ) ) #Rank order questions from easiest to hardest
 
 item_stats <- rename("Mean" = "Score", item_stats)
 
 #Infrequency of response calculation
 easy_mean <- item_stats %>%   #Average score of 20 easiest questions
-  filter(Rank<=10) %>% select(Mean)
+  filter(Rank<=10) %>% dplyr::select(Mean)
 easy_mean <- mean(easy_mean$Mean, na.rm = TRUE)
 
 #Imputation of mean values for personality items by work role   
@@ -191,7 +201,7 @@ df_rawscore3 <- rbind(df_rawscore2_a, df_rawscore2_b) #bind together the Tier 1 
 
 df_infreq <-  
   df_rawscore3 %>% 
-    select(ID, Q1_A_1:Q21_A_16) %>% 
+    dplyr::select(ID, Q1_A_1:Q21_A_16) %>% 
     gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>% 
     left_join(item_stats) %>% 
     filter(Rank<=10) %>% ungroup() %>% 
@@ -291,11 +301,34 @@ p_value <- function(personalitytrait, missingness, infrequency) {
 # Define UI for application that draws a histogram
 ui <- navbarPage(
     theme = shinytheme("united"),
-    title="Factor Analysis Tool",
+    title="Tier1 Data Analysis",
     header=tagList(useShinydashboard()),
     position = "fixed-top",
     
-    tabPanel("Data Exploration", icon = icon ("flag-usa"), br(), br(), br(),
+    tabPanel("Demographic Data", icon = icon ("flag-usa"), br(), br(), br(),
+             
+             tabsetPanel(
+               
+               tabPanel("Experience",
+                        box(title="Rank", status="primary", solidHeader = TRUE, dataTableOutput("ranktable") ),
+                        box(title="Experience", status="primary", solidHeader = TRUE, plotOutput("experience") )
+                        ),
+               
+               tabPanel ("Education",
+                         box(title="Education High Degree", status="primary", solidHeader = TRUE, plotOutput("education") ),
+                         box(title="CS Degrees", status="primary", solidHeader = TRUE, plotOutput("education2") )
+                         ) ,
+    
+               tabPanel ("GT Scores and Certifications",
+                        box(title="Gt Scores", status="primary", solidHeader = TRUE, plotOutput("gtscore") ),
+                        box(title="Certifications", status="primary", solidHeader = TRUE, plotOutput("certifications") ) ),
+               
+               tabPanel ("Hobbies",
+                         box(title="Hobbies", status="primary", solidHeader = TRUE, plotOutput("hobbies") ),
+                         box(title="Preferences", status="primary", solidHeader = TRUE, plotOutput("hobbies2") )
+   ) )) ,
+    
+    tabPanel("Personality: Group Comparison", icon = icon ("flag-usa"), br(), br(), br(),
              
              sidebarLayout( 
                
@@ -330,7 +363,7 @@ ui <- navbarPage(
                )
             ),
     
-    tabPanel("Group Comparison (Resampling)", icon = icon ("flag-usa"), br(), br(), br(),
+    tabPanel("Personality: Resampling", icon = icon ("flag-usa"), br(), br(), br(),
                
              sidebarLayout (
                
@@ -355,7 +388,7 @@ ui <- navbarPage(
               
              ) ),
              
-          tabPanel("Factor Exploration", icon = icon ("flag-usa"), br(), br(), br(),
+          tabPanel("Exploratory Factor Analysis", icon = icon ("flag-usa"), br(), br(), br(),
 
               box(title="Factor Analsis variables and alpha value", status="primary", solidHeader = TRUE, width = 4,
 
@@ -389,7 +422,7 @@ ui <- navbarPage(
               ,
            
 
-           box(title="New Factor Plot", status="primary", solidHeader = TRUE, width = 12,
+           box(title="New Factor Construct", status="primary", solidHeader = TRUE, width = 12,
                
                plotOutput("plot3", height = "600px") ) 
            ),
@@ -403,7 +436,7 @@ ui <- navbarPage(
                 plotOutput("plot5", height = "600px"))
       ),
 
-        tabPanel("Questionnaire", icon = icon ("table"), br(), br(), br(),
+        tabPanel("New Construct Questionnaire", icon = icon ("table"), br(), br(), br(),
 
                  downloadButton("downloadData", "Download Data"),
 
@@ -413,11 +446,151 @@ ui <- navbarPage(
 # Define server logic required to draw a histogram
 server <- function(input, output) {
     
+  #Demographic 
+  #Rank
+  
+  output$ranktable <- renderDataTable ({ 
+    datatable(df_demographic %>% 
+              dplyr::select(Work_Role, Rank) %>% 
+              group_by(Work_Role, Rank) %>%
+              summarise(n=n()) %>% 
+              spread(key=Rank, value=n) )
+  })
+  
+  
+  #Experience
+  output$experience <- renderPlot ({
+    df_demographic %>% 
+    dplyr::select(Work_Role, Experience) %>% 
+    group_by(Work_Role, Experience) %>%
+    summarise(n=n()) %>% 
+    left_join(n_Tier) %>% 
+    mutate(n=n/n_tot) %>% 
+    ggplot(aes(x=Experience, y=n, fill=Work_Role)) + 
+    geom_col(position = "dodge2") +
+    scale_fill_manual(values=c("lightgreen", "darkgray", "lightgreen", "gray")) +
+    theme(legend.title= element_text(color="black", size=10), legend.position = "top", axis.text = element_text(size=12)) +
+    ylab("") + xlab("") + ylim(0,1) 
+    # facet_grid(Work_Role~.) 
+  })
+  
+  #Education
+  output$education <- renderPlot ({df_demographic %>% 
+    dplyr::select(Work_Role, Degree) %>% 
+    group_by(Work_Role, Degree) %>%
+    summarise(n=n()) %>% 
+    left_join(n_Tier) %>% 
+    mutate(n=n/n_tot) %>% 
+    na.omit(Degree) %>% 
+    ggplot(aes(x=reorder(Degree, -n, fun=mean), y=n, fill=Work_Role, group=Work_Role)) + 
+    geom_col(position="dodge2") +
+    geom_line(aes(linetype=Work_Role)) +
+    scale_fill_manual(values=c("red", "lightblue", "lightgreen", "gray")) +
+    scale_linetype_manual(values=c("dashed", "blank", "blank", "blank")) +
+    theme(legend.title= element_text(color="black", size=10), legend.position = "top", axis.text = element_text(size=12)) +
+    ylab("") + xlab("") + ylim(0,1) 
+    })
+  
+  #Education CD Degrees
+  output$education2 <- renderPlot ({df_demographic %>% 
+    dplyr::select(ID, Work_Role, Bachelors_CS, Masters_CS) %>% 
+    mutate(Bachelors_CS = if_else(Bachelors_CS=="Yes", 1, 0),
+           Masters_CS = if_else(Masters_CS=="Yes", 1, 0)) %>%
+    gather(Bachelors_CS:Masters_CS, key=Degree, value=n) %>% 
+    group_by(Work_Role, Degree) %>%
+    summarise(n=sum(n)) %>% 
+    left_join(n_Tier) %>% 
+    mutate(n=n/n_tot) %>% 
+    ggplot(aes(x=Degree, y=n, fill=Work_Role)) + 
+    geom_col(position = "dodge2") +
+    scale_fill_manual(values=c("red", "lightblue", "lightgreen", "gray")) +
+    theme(legend.title= element_text(color="black", size=10), legend.position = "top", axis.text = element_text(size=12)) +
+    ylab("% of Tier group") + xlab("") + ylim(0,1)
+    })
+  
+  #Certifications
+  output$certifications <- renderPlot ({
+    df_demographic %>% 
+    dplyr::select(ID, Work_Role, OSCP:`Security`) %>%
+    gather(OSCP:`Security`, key=Cert, value=n) %>% 
+    mutate(n=if_else(n=="Yes", 1, 0)) %>% 
+    group_by(Work_Role, Cert) %>%
+    summarise(n=sum(n)) %>% 
+    left_join(n_Tier) %>%
+    mutate(n=round(n/n_tot,2)) %>% 
+    dplyr::select(-n_tot) %>%
+    ggplot(aes(x=reorder(Cert, n, FUN = mean), y=n, color=Work_Role, group=Work_Role)) + 
+    geom_point(size=2) +
+    geom_line(aes(linetype=Work_Role)) +
+    scale_color_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
+    scale_linetype_manual(values=c("dashed", "blank", "blank", "blank")) +
+    theme(legend.title= element_text(color="black", size=10), legend.position = "top", axis.text = element_text(size=12)) +
+    ylab("percentage of respondents") + xlab("") +
+    coord_flip() 
+  })
+  
+  
+  #GT Score
+  output$gtscore <- renderPlot ({
+    df_demographic %>% 
+    dplyr::select (ID, Work_Role, GTScore) %>% 
+    group_by(Work_Role, GTScore) %>% summarise(n=n()) %>% 
+    left_join(n_Tier) %>% 
+    mutate(n= n/n_tot) %>% 
+    ggplot(aes(x=GTScore, y=n, fill=Work_Role)) + 
+    geom_col (position = "dodge2") +
+    scale_fill_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
+    #facet_grid(Work_Role~.) +   
+    theme(legend.title= element_text(color="black", size=10), legend.position = "top", axis.text = element_text(size=12)) +
+    ylab("percentage of respondents") + xlab("") 
+  })
+  
+  #Hobbies
+  output$hobbies <- renderPlot ({
+  df_hobbies %>%  
+    mutate(Response = if_else(Response =="Yes", 1, 0)) %>% 
+    group_by(Work_Role, Hobby) %>% 
+    summarise(Response = sum(Response)) %>% 
+    left_join(n_Tier) %>% 
+    mutate(Response = Response/n_tot) %>% 
+    ggplot(aes(x=reorder(Hobby, Response, FUN=mean), y=Response, color=Work_Role, group=Work_Role)) + 
+    geom_point(size=2) +
+    geom_line(aes(linetype=Work_Role)) +
+    scale_color_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
+    scale_linetype_manual(values=c("dashed", "blank", "blank", "blank")) +
+    theme(legend.title= element_text(color="black", size=10), legend.position = "top", axis.text = element_text(size=12)) +
+    ylab("percent of respondents") +
+    xlab("") +
+    ylim(0,1) +
+    coord_flip() 
+  })
+  
+  #Hobbies2
+  output$hobbies2 <- renderPlot ({
+    df_demographic %>% 
+    dplyr::select(ID, Work_Role, CPU_OS, Game_Platform, Game_type) %>% 
+    gather(CPU_OS:Game_type, key=Category, value=Response) %>%
+    group_by(Work_Role, Category, Response) %>% 
+    summarise(n=n()) %>% 
+    left_join(n_Tier) %>% 
+    mutate(n= n/n_tot) %>%
+    na.omit(Response) %>% 
+    ggplot(aes(x=reorder(Response, n, FUN=mean), y=n, fill=Work_Role)) + 
+    geom_col(position="dodge2") + 
+    facet_grid(Category~., scales = "free_y") + 
+    theme(legend.position = "top", axis.text = element_text(size=12)) +
+    xlab("") + ylim(0,1) +
+    ylab("percent of respondents") +
+    coord_flip() 
+  })
+  
+  #Exploratory Factor Analysis
+    
   efa_data <- reactive ({
         df_rawscore4 %>% 
         filter(Miss_P <= input$miss_limit) %>% 
         filter(infreq <= input$infreq_limit) %>% 
-        select(Q1_A_1:Q21_A_15)
+        dplyr::select(Q1_A_1:Q21_A_15)
     })
     
     efa_cor <- reactive ({
@@ -447,15 +620,15 @@ server <- function(input, output) {
             dplyr::group_by(Scale) %>% 
             mutate(LoadRank = rank(-1*abs(Loading))) %>% 
             filter(LoadRank<=input$items) %>% 
-            select(-Item, -Rank, -LoadRank )  
+            dplyr::select(-Item, -Rank, -LoadRank )  
     })
 
     df_revised_scored <- reactive ({ 
-         df_rawscore3 %>% select(ID, Work_Role, Rank, Q1_A_1:Q21_A_16) %>% 
+         df_rawscore3 %>% dplyr::select(ID, Work_Role, Rank, Q1_A_1:Q21_A_16) %>% 
          gather(Q1_A_1:Q21_A_16, key=Question, value=Score) %>% 
          left_join(df_efa(), by="Question") %>% 
         mutate(Score = if_else(Loading>0, Score, 6-Score) ) %>% #reverse scoring based on item loading
-         select(Scale, ID:Question, Score) %>% 
+         dplyr::select(Scale, ID:Question, Score) %>% 
          drop_na(Scale) %>% 
          group_by(ID, Work_Role, Scale) %>% 
          summarise(Score=mean(Score))})
@@ -463,11 +636,11 @@ server <- function(input, output) {
     df_revised_scored_order <- reactive ({
         df_revised_scored()  %>% #compute summary statistics for Tier1 and Tier_Other
         summarySE(groupvars = c("Work_Role", "Scale"), measurevar = "Score", na.rm = TRUE) %>% 
-        select(Work_Role,Scale,Score) %>% 
+        dplyr::select(Work_Role,Scale,Score) %>% 
         pivot_wider(names_from = Work_Role, values_from = Score) %>% 
         mutate(Difference = abs(Tier_1 - Tier_Other)) %>% 
         summarySE(groupvars= "Scale", measurevar = "Difference") %>% 
-        mutate(Rank = rank(-1*Difference)) %>% select(Scale, Rank)  })
+        mutate(Rank = rank(-1*Difference)) %>% dplyr::select(Scale, Rank)  })
     
     stat_test <- reactive ({
         df_revised_scored() %>%
@@ -556,7 +729,7 @@ server <- function(input, output) {
      #Correlation Plot
      output$plot5 <- renderPlot ({
                 corrplot(cor(df_revised_scored() %>%
-                             select(ID, Scale, Score) %>%
+                             dplyr::select(ID, Scale, Score) %>%
                              pivot_wider(names_from=Scale, values_from = Score) %>%
                              ungroup() %>% 
                              dplyr::select(-ID, -Work_Role)),
@@ -579,7 +752,7 @@ server <- function(input, output) {
          filter(infreq <= input$infreq_limit) %>% 
              group_by(Work_Role) %>% 
          summarise(count=n()) %>%  
-         select(Work_Role, count) %>% pivot_wider(names_from = "Work_Role", values_from = "count" ) %>%  
+         dplyr::select(Work_Role, count) %>% pivot_wider(names_from = "Work_Role", values_from = "count" ) %>%  
          gt() %>% 
          tab_header(title=md("sample size for analysis"))
      })
@@ -591,7 +764,7 @@ server <- function(input, output) {
        df_rawscore4 %>% 
        filter(Miss_P <= input$miss_limit) %>% 
        filter(infreq <= input$infreq_limit) %>% 
-       select(Work_Role, Q1_A_1:Q21_A_16) %>% 
+       dplyr::select(Work_Role, Q1_A_1:Q21_A_16) %>% 
        mutate_at(vars(Q1_A_1:Q21_A_16), scale) %>% 
        mutate(Work_Role = as.factor(Work_Role))
      })
@@ -604,7 +777,7 @@ server <- function(input, output) {
    
      importance <- reactive({
        rfmodel()$importance %>% as.data.frame() %>% 
-       rownames_to_column("Question") %>% select(Question, MeanDecreaseAccuracy) 
+       rownames_to_column("Question") %>% dplyr::select(Question, MeanDecreaseAccuracy) 
      })
      
     minImportance <- reactive ({
@@ -629,7 +802,7 @@ server <- function(input, output) {
          left_join(item_stats) %>% 
          left_join(importance2(), by="Question") %>% 
          arrange(abs(p)) %>% 
-         select (Scale, Trait, Question, Loading, Mean, sd, PredValue, Content)  %>% 
+         dplyr::select (Scale, Trait, Question, Loading, Mean, sd, PredValue, Content)  %>% 
          gt(groupname_col = "Scale", rowname_col="Question") %>% 
          tab_style(style = list (
            cell_text(color = "red")),
@@ -649,7 +822,7 @@ server <- function(input, output) {
        },
        content=function(file) {
          write.csv(df_efa() %>% mutate(Loading = round(Loading, 2)) %>% 
-                     select (Scale, Trait, Question, Loading, Content) %>%
+                     dplyr::select (Scale, Trait, Question, Loading, Content) %>%
                      arrange(Scale), file )
        })
 
@@ -658,7 +831,7 @@ server <- function(input, output) {
      df_scored_summary <- reactive ({
        df_scored %>% ungroup() %>% 
        filter(Miss_P <input$miss_limit, infreq<input$infreq_limit) %>% 
-       select(ID, Work_Role, Problem_Solving:Tolerance) %>% 
+       dplyr::select(ID, Work_Role, Problem_Solving:Tolerance) %>% 
        mutate_at(vars(Problem_Solving:Tolerance), scale) %>% #scale function
        gather(Problem_Solving:Tolerance, key=Dimension, value=Score) %>% 
         summarySE(groupvars = c("Work_Role", "Dimension"), measurevar = "Score", na.rm = TRUE)
@@ -669,7 +842,7 @@ server <- function(input, output) {
        df_scored_summary() %>% 
        filter(Work_Role=="Tier_1") %>% 
        mutate(order=rank(Score)) %>% 
-       select(Dimension, order) #compute summary statistics for Tier 1 
+       dplyr::select(Dimension, order) #compute summary statistics for Tier 1 
      })
      
      #Visualization of summary statistics for Personality results by work role      
