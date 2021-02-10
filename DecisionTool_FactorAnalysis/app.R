@@ -24,7 +24,6 @@ library(tidyverse)
 library(moderndive)
 library(skimr)
 library(infer)
-
 library(DT)
 library(rstatix)
 
@@ -113,9 +112,9 @@ df_preprocess <- read_xlsx(file) %>%
 
 #Replace Work roles with simple categories
 df_preprocess$Work_Role <-  gsub("Tier-1 - Remote Operator|Tier-1 - Capability Developer|Tier-1 - Exploitation Analyst", "Tier_1", df_preprocess$Work_Role)
-df_preprocess$Work_Role <-  gsub("Tier 2- Data Architect, Network Analyst, System Analyst [(]All Master Proficiency level only[)]", "Tier_Other", df_preprocess$Work_Role)
-df_preprocess$Work_Role <-  gsub("Tier 3- Other work role directly assigned to a Cyber Mission Force Team", "Tier_Other", df_preprocess$Work_Role)
-df_preprocess$Work_Role <-  gsub("Tier 4 -  Other authorized cyber work role|I am currently not assigned a cyber work role or I am assigned as a student", "Tier_Other", df_preprocess$Work_Role)
+df_preprocess$Work_Role <-  gsub("Tier 2- Data Architect, Network Analyst, System Analyst [(]All Master Proficiency level only[)]", "Tier_2", df_preprocess$Work_Role)
+df_preprocess$Work_Role <-  gsub("Tier 3- Other work role directly assigned to a Cyber Mission Force Team", "Tier_3", df_preprocess$Work_Role)
+df_preprocess$Work_Role <-  gsub("Tier 4 -  Other authorized cyber work role|I am currently not assigned a cyber work role or I am assigned as a student", "Tier_4", df_preprocess$Work_Role)
 df_preprocess$Bachelors_CS <- replace_na(df_preprocess$Bachelors_CS, "No")
 df_preprocess$Masters_CS <- replace_na(df_preprocess$Masters_CS, "No")
 df_preprocess$Degree <- gsub("Bachelor's Degree [(]4 year[)]", "Bachelors", df_preprocess$Degree)
@@ -131,14 +130,19 @@ df_preprocess$GTScore <- gsub("121 or higher", ">120", df_preprocess$GTScore)
 df_preprocess$GTScore <- gsub("120 or lower", "<=120", df_preprocess$GTScore)
 df_preprocess$GTScore <- gsub("N/A or prefer not to report", "not reported", df_preprocess$GTScore)
 
-df_demographic <- df_preprocess %>% dplyr::select (ID,Rank:Hexidecimal)
-n_Tier <- df_demographic %>% group_by(Work_Role) %>% summarise(n_tot=n())
+df_demographic <- df_preprocess %>% 
+  dplyr::select (ID,Rank:Hexidecimal)
+n_Tier <- df_demographic %>% 
+  mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>%
+  group_by(Work_Role) %>% summarise(n_tot=n())
+
 df_hobbies <- df_demographic %>% 
   dplyr::select (ID, Work_Role, BuiltCPU, Gaming, Edit_game, Scripts, SOHO, Hexidecimal) %>%
   gather(BuiltCPU:Hexidecimal, key="Hobby", value="Response") 
 df_hobbies$Response <- replace_na(df_hobbies$Response, "No")
 
-df_rawscore <- df_preprocess %>%   
+df_rawscore <- df_preprocess %>% 
+  mutate(Work_Role = if_else(Work_Role %in% c("Tier_2", "Tier_3", "Tier_4"), "Tier_Other", Work_Role)) %>% 
     mutate_at(vars(`Q1_A_1` : `Q21_A_16`), likertNum) %>% #score likert items
     mutate(
         `3D_Q16` = if_else(`3D_Q16` =="E", 1, 0), #score cognitive questions according to scoring key from ICAR
@@ -255,6 +259,8 @@ df_scored <- df_rawscore4 %>%
 
 personalityscales <- c("Problem_Solving", "Depth_Thought", "Mental_Quickness", "Need_Cognition", "Love_Learning", "Creativity","Concientiousness", "Orderliness", "Deprivation_Sensitivity", "Joyous_Exploration", "Social_Curiosity", "Stress_Tolerance", "Thrill_Seeking", "Interpersonal_Understanding", "Self_Confidence", "Suspension_Judgement", "Self_Discipline", "Industriness", "Enthusiasm", "Flow_Proneness", "Cyberwork_Confidence", "General_SelfEfficacy", "Resilience", "Teamwork",  "Leadership", "Intellectual_Openness", "Tolerance"    )
 
+
+
 hypothesisplot <- function (personalitytrait, missingness, infrequency, confidence) {
   visualise(df_scored %>%
               filter(Miss_P < missingness, infreq < infrequency) %>%
@@ -298,6 +304,53 @@ p_value <- function(personalitytrait, missingness, infrequency) {
                                       calculate (stat = "diff in means", order = c("Tier_1", "Tier_Other")))>0, "right", "left"))
 }
 
+demo_plot <- function (category) {
+  df_demographic %>% 
+  mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>%
+  select(Work_Role, Rank, Experience:Masters_CS,GTScore ) %>%
+    gather(Experience:GTScore, key=Category, value=Response) %>% 
+  group_by(Work_Role, Rank, Category, Response) %>%
+  summarise(n=n()) %>% 
+  filter(Category == category) %>% 
+  left_join(n_Tier) %>% 
+  mutate(n=n/n_tot) %>% 
+  na.omit() %>% 
+  mutate(Rank = factor(Rank, levels = c("WO1 - CW5", "O1 or higher", "E1 - E9"))) %>% 
+  ggplot(aes(x=Work_Role, y=n, fill=Rank)) + 
+  geom_col() +
+  scale_fill_manual(values=c("darkgray", "skyblue", "lightgreen")) +
+  theme(legend.title= element_text(color="black", size=12), legend.position = "top", axis.text = element_text(size=14),
+        axis.title = element_text(size=14),
+        legend.text = element_text(size=14),
+        strip.text = element_text(size=14, color="blue"))+
+  ylab("% of Tier group") + xlab("") + ylim(0,1) +
+  facet_grid(.~Response)
+}
+
+  CS_plot <- 
+    df_demographic %>% 
+      mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>% 
+      select(ID, Work_Role, Rank, Bachelors_CS, Masters_CS) %>% 
+      mutate(Bachelors_CS = if_else(Bachelors_CS=="Yes", 1, 0),
+             Masters_CS = if_else(Masters_CS=="Yes", 1, 0)) %>%
+      gather(Bachelors_CS:Masters_CS, key=Category, value=n) %>% 
+      group_by(Work_Role, Rank, Category) %>%
+      summarise(n=sum(n)) %>% 
+      left_join(n_Tier) %>% 
+      mutate(n=n/n_tot) %>% 
+      na.omit() %>% 
+      mutate(Rank = factor(Rank, levels = c("WO1 - CW5", "O1 or higher", "E1 - E9"))) %>% 
+      ggplot(aes(x=Work_Role, y=n, fill=Rank)) + 
+      geom_col() +
+      scale_fill_manual(values=c("darkgray", "skyblue", "lightgreen")) +
+      theme(legend.title= element_text(color="black", size=12), legend.position = "top", axis.text = element_text(size=14),
+            axis.title = element_text(size=14),
+            legend.text = element_text(size=14),
+            strip.text = element_text(size=14, color="blue"))+
+      ylab("% of Tier group") + xlab("") + ylim(0,1) +
+      facet_grid(.~Category)
+ 
+  
 # Define UI for application that draws a histogram
 ui <- navbarPage(
     theme = shinytheme("united"),
@@ -310,23 +363,44 @@ ui <- navbarPage(
              tabsetPanel(
                
                tabPanel("Experience",
-                        box(title="Rank", status="primary", solidHeader = TRUE, dataTableOutput("ranktable") ),
-                        box(title="Experience", status="primary", solidHeader = TRUE, plotOutput("experience") )
+                        box(title="Work Role by Rank", status="primary", solidHeader = TRUE, width = 4,
+                            gt_output("ranktable"), br(), br(),
+                           radioButtons("demo_category", label = "Demographic Plots", choices = list("Experience" , "Degree", "GTScore"))),
+                        box(title="Demographic Plot", status="primary", solidHeader = TRUE, width = 8,
+                            plotOutput("demographicplot", height = "600px"), height = "700px" )
                         ),
                
-               tabPanel ("Education",
-                         box(title="Education High Degree", status="primary", solidHeader = TRUE, plotOutput("education") ),
-                         box(title="CS Degrees", status="primary", solidHeader = TRUE, plotOutput("education2") )
+               tabPanel ("CS Degrees",
+                          plotOutput("csplot", height = "700px") 
                          ) ,
     
-               tabPanel ("GT Scores and Certifications",
-                        box(title="Gt Scores", status="primary", solidHeader = TRUE, plotOutput("gtscore") ),
-                        box(title="Certifications", status="primary", solidHeader = TRUE, plotOutput("certifications") ) ),
+               tabPanel ("Certifications",
+                          plotOutput("certifications", height = "700px") ) ,
                
                tabPanel ("Hobbies",
-                         box(title="Hobbies", status="primary", solidHeader = TRUE, plotOutput("hobbies") ),
-                         box(title="Preferences", status="primary", solidHeader = TRUE, plotOutput("hobbies2") )
-   ) )) ,
+                         box(title="Research Questions", status="primary", solidHeader = TRUE, height = "700px",
+                         h2("Gaming: Do you play video games?"),
+                         h2("SOHO: Have you installed, operted, or maintained a small office home office (SOHO) network?"),
+                         h2("Hexidecimal: Can you easily translate hexadecimal to any of the following: asci, decimal, or binary?"),
+                         h2("BuiltCPU: Have you ever built a computer?"),
+                         h2("Scripts: Do you create scripts on your personal computing devices?"),
+                         h2("Edit game: Have you edited the code in a video game to create an advantage?")),
+                         box(title="Hobbies Summary", status="primary", solidHeader = TRUE, height="700px", 
+                             plotOutput("hobbies", height = "600px") )),
+               
+               tabPanel ("Hobbies2",
+                         box(title="Research Questions", status="primary", solidHeader = TRUE, height = "700px",
+                             h2("Have you built a CPU?  - Yes Responses (all Yes reported purchasing components individually)", style="color:blue"),
+                             h2("CPU OS: If you  built your own computer, what operating system do you prefer?"),
+                             h2("Do you play video games? - Yes Responses", style="color:blue"),
+                             h2("Game platform: What is your preferred game platform?"),
+                             h2("Game type: What types of games do you prefer?")),
+                             
+                         box(title="Preferences Summary", status="primary", solidHeader = TRUE, height="700px", 
+                             plotOutput("hobbies2", height = "600px") ))
+               )
+             ),
+                          
     
     tabPanel("Personality: Group Comparison", icon = icon ("flag-usa"), br(), br(), br(),
              
@@ -447,141 +521,104 @@ ui <- navbarPage(
 server <- function(input, output) {
     
   #Demographic 
-  #Rank
-  
-  output$ranktable <- renderDataTable ({ 
-    datatable(df_demographic %>% 
-              dplyr::select(Work_Role, Rank) %>% 
-              group_by(Work_Role, Rank) %>%
-              summarise(n=n()) %>% 
-              spread(key=Rank, value=n) )
+ 
+  output$ranktable <- render_gt ({ 
+    df_preprocess %>% 
+      dplyr::select(Work_Role, Rank) %>% 
+      group_by(Work_Role, Rank) %>%
+      summarise(n=n()) %>% 
+      spread(key=Rank, value=n) %>% left_join(df_preprocess %>% 
+                                                select(Work_Role, Rank, Prior_Tier1) %>% 
+                                                group_by(Work_Role, Prior_Tier1) %>% 
+                                                summarise(prior_Tier1=n()) %>% filter(Prior_Tier1=="Yes") %>% 
+                                                select(-Prior_Tier1)) %>% ungroup() %>% 
+      gt(rowname_col = "Work_Role")
   })
   
   
   #Experience
-  output$experience <- renderPlot ({
-    df_demographic %>% 
-    dplyr::select(Work_Role, Experience) %>% 
-    group_by(Work_Role, Experience) %>%
-    summarise(n=n()) %>% 
-    left_join(n_Tier) %>% 
-    mutate(n=n/n_tot) %>% 
-    ggplot(aes(x=Experience, y=n, fill=Work_Role)) + 
-    geom_col(position = "dodge2") +
-    scale_fill_manual(values=c("lightgreen", "darkgray", "lightgreen", "gray")) +
-    theme(legend.title= element_text(color="black", size=10), legend.position = "top", axis.text = element_text(size=12)) +
-    ylab("") + xlab("") + ylim(0,1) 
-    # facet_grid(Work_Role~.) 
-  })
+  output$demographicplot <- renderPlot({demo_plot(input$demo_category)})
   
-  #Education
-  output$education <- renderPlot ({df_demographic %>% 
-    dplyr::select(Work_Role, Degree) %>% 
-    group_by(Work_Role, Degree) %>%
-    summarise(n=n()) %>% 
-    left_join(n_Tier) %>% 
-    mutate(n=n/n_tot) %>% 
-    na.omit(Degree) %>% 
-    ggplot(aes(x=reorder(Degree, -n, fun=mean), y=n, fill=Work_Role, group=Work_Role)) + 
-    geom_col(position="dodge2") +
-    geom_line(aes(linetype=Work_Role)) +
-    scale_fill_manual(values=c("red", "lightblue", "lightgreen", "gray")) +
-    scale_linetype_manual(values=c("dashed", "blank", "blank", "blank")) +
-    theme(legend.title= element_text(color="black", size=10), legend.position = "top", axis.text = element_text(size=12)) +
-    ylab("") + xlab("") + ylim(0,1) 
+  #CS Degrees
+  
+  output$csplot <- renderPlot({
+    CS_plot
     })
   
-  #Education CD Degrees
-  output$education2 <- renderPlot ({df_demographic %>% 
-    dplyr::select(ID, Work_Role, Bachelors_CS, Masters_CS) %>% 
-    mutate(Bachelors_CS = if_else(Bachelors_CS=="Yes", 1, 0),
-           Masters_CS = if_else(Masters_CS=="Yes", 1, 0)) %>%
-    gather(Bachelors_CS:Masters_CS, key=Degree, value=n) %>% 
-    group_by(Work_Role, Degree) %>%
-    summarise(n=sum(n)) %>% 
-    left_join(n_Tier) %>% 
-    mutate(n=n/n_tot) %>% 
-    ggplot(aes(x=Degree, y=n, fill=Work_Role)) + 
-    geom_col(position = "dodge2") +
-    scale_fill_manual(values=c("red", "lightblue", "lightgreen", "gray")) +
-    theme(legend.title= element_text(color="black", size=10), legend.position = "top", axis.text = element_text(size=12)) +
-    ylab("% of Tier group") + xlab("") + ylim(0,1)
-    })
   
   #Certifications
   output$certifications <- renderPlot ({
     df_demographic %>% 
-    dplyr::select(ID, Work_Role, OSCP:`Security`) %>%
-    gather(OSCP:`Security`, key=Cert, value=n) %>% 
-    mutate(n=if_else(n=="Yes", 1, 0)) %>% 
-    group_by(Work_Role, Cert) %>%
-    summarise(n=sum(n)) %>% 
-    left_join(n_Tier) %>%
-    mutate(n=round(n/n_tot,2)) %>% 
-    dplyr::select(-n_tot) %>%
-    ggplot(aes(x=reorder(Cert, n, FUN = mean), y=n, color=Work_Role, group=Work_Role)) + 
-    geom_point(size=2) +
-    geom_line(aes(linetype=Work_Role)) +
-    scale_color_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
-    scale_linetype_manual(values=c("dashed", "blank", "blank", "blank")) +
-    theme(legend.title= element_text(color="black", size=10), legend.position = "top", axis.text = element_text(size=12)) +
+      mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>% 
+      select(ID, Work_Role, OSCP:`Security`) %>%
+      gather(OSCP:`Security`, key=Cert, value=n) %>% 
+      mutate(n=if_else(n=="Yes", 1, 0)) %>% 
+      group_by(Work_Role, Cert) %>%
+      summarise(n=sum(n)) %>% 
+      left_join(n_Tier) %>%
+      mutate(n=round(n/n_tot,2)) %>% 
+      select(-n_tot) %>%
+      ggplot(aes(x=reorder(Cert, n, FUN = mean), y=n, color=Work_Role, group=Work_Role)) + 
+      geom_point(size=3) +
+      geom_line(aes(linetype=Work_Role)) +
+      scale_color_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
+      scale_linetype_manual(values=c("dashed", "dashed", "blank", "blank")) +
+      theme(legend.title= element_text(color="black", size=12), legend.position = "top", axis.text = element_text(size=14),
+            axis.title = element_text(size=14),
+            legend.text = element_text(size=14),
+            strip.text = element_text(size=14, color="blue"))+
     ylab("percentage of respondents") + xlab("") +
     coord_flip() 
   })
   
   
-  #GT Score
-  output$gtscore <- renderPlot ({
-    df_demographic %>% 
-    dplyr::select (ID, Work_Role, GTScore) %>% 
-    group_by(Work_Role, GTScore) %>% summarise(n=n()) %>% 
-    left_join(n_Tier) %>% 
-    mutate(n= n/n_tot) %>% 
-    ggplot(aes(x=GTScore, y=n, fill=Work_Role)) + 
-    geom_col (position = "dodge2") +
-    scale_fill_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
-    #facet_grid(Work_Role~.) +   
-    theme(legend.title= element_text(color="black", size=10), legend.position = "top", axis.text = element_text(size=12)) +
-    ylab("percentage of respondents") + xlab("") 
-  })
-  
+
   #Hobbies
   output$hobbies <- renderPlot ({
-  df_hobbies %>%  
-    mutate(Response = if_else(Response =="Yes", 1, 0)) %>% 
-    group_by(Work_Role, Hobby) %>% 
-    summarise(Response = sum(Response)) %>% 
-    left_join(n_Tier) %>% 
-    mutate(Response = Response/n_tot) %>% 
-    ggplot(aes(x=reorder(Hobby, Response, FUN=mean), y=Response, color=Work_Role, group=Work_Role)) + 
-    geom_point(size=2) +
-    geom_line(aes(linetype=Work_Role)) +
-    scale_color_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
-    scale_linetype_manual(values=c("dashed", "blank", "blank", "blank")) +
-    theme(legend.title= element_text(color="black", size=10), legend.position = "top", axis.text = element_text(size=12)) +
-    ylab("percent of respondents") +
-    xlab("") +
-    ylim(0,1) +
-    coord_flip() 
+    df_hobbies %>%  
+      mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>% 
+      mutate(Response = if_else(Response =="Yes", 1, 0)) %>% 
+      group_by(Work_Role, Hobby) %>% 
+      summarise(Response = sum(Response)) %>% 
+      left_join(n_Tier) %>% 
+      mutate(Response = Response/n_tot) %>% 
+      ggplot(aes(x=reorder(Hobby, Response, FUN=mean), y=Response, color=Work_Role, group=Work_Role)) + 
+      geom_point(size=3) +
+      geom_line(aes(linetype=Work_Role)) +
+      scale_color_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
+      scale_linetype_manual(values=c("dashed", "dashed", "blank", "blank")) +
+      theme(legend.title= element_text(color="black", size=12), legend.position = "top", axis.text = element_text(size=14),
+            axis.title = element_text(size=14),
+            legend.text = element_text(size=14),
+            strip.text = element_text(size=14, color="blue"))+
+      ylab("% of Tier group") +
+      xlab("") +
+      ylim(0,1) +
+      coord_flip() 
   })
   
   #Hobbies2
   output$hobbies2 <- renderPlot ({
     df_demographic %>% 
-    dplyr::select(ID, Work_Role, CPU_OS, Game_Platform, Game_type) %>% 
-    gather(CPU_OS:Game_type, key=Category, value=Response) %>%
-    group_by(Work_Role, Category, Response) %>% 
-    summarise(n=n()) %>% 
-    left_join(n_Tier) %>% 
-    mutate(n= n/n_tot) %>%
-    na.omit(Response) %>% 
-    ggplot(aes(x=reorder(Response, n, FUN=mean), y=n, fill=Work_Role)) + 
-    geom_col(position="dodge2") + 
-    facet_grid(Category~., scales = "free_y") + 
-    theme(legend.position = "top", axis.text = element_text(size=12)) +
-    xlab("") + ylim(0,1) +
-    ylab("percent of respondents") +
-    coord_flip() 
+      select(ID, Work_Role, CPU_OS, Game_Platform, Game_type) %>% 
+      mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>% 
+      gather(CPU_OS:Game_type, key=Category, value=Response) %>%
+      group_by(Work_Role, Category, Response) %>% 
+      summarise(n=n()) %>% 
+      left_join(n_Tier) %>% 
+      mutate(n= n/n_tot) %>%
+      na.omit(Response) %>% 
+      ggplot(aes(x=reorder(Response, n, FUN=mean), y=n, fill=Work_Role)) + 
+      geom_col(position="dodge2") + 
+      coord_flip() +
+      scale_fill_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
+      facet_grid(Category~Work_Role, scales = "free_y") + 
+      theme(legend.title= element_text(color="black", size=12), legend.position = "top", axis.text = element_text(size=14),
+            axis.title = element_text(size=14),
+            legend.text = element_text(size=14),
+            strip.text = element_text(size=14, color="blue"))+
+      xlab("") +
+      ylab("% of Tier group")
   })
   
   #Exploratory Factor Analysis

@@ -3,7 +3,9 @@ library(randomForest)
 
 df_demographic <- df_preprocess %>% select (ID,Rank:Hexidecimal)
 
-n_Tier <- df_demographic %>% group_by(Work_Role) %>% summarise(n_tot=n())
+n_Tier <- df_demographic %>% 
+  mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>%
+  group_by(Work_Role) %>% summarise(n_tot=n())
 
 #Rank
 #Experience
@@ -16,57 +18,65 @@ datatable(df_demographic %>%
 
 #Experience
 df_demographic %>% 
-  select(Work_Role, Experience) %>% 
-  group_by(Work_Role, Experience) %>%
+  mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>%
+  select(Work_Role, Rank, Experience) %>% 
+  group_by(Work_Role, Rank, Experience) %>%
   summarise(n=n()) %>% 
   left_join(n_Tier) %>% 
   mutate(n=n/n_tot) %>% 
-  ggplot(aes(x=Experience, y=n, fill=Work_Role)) + 
-  geom_col(position = "dodge2") +
-  scale_fill_manual(values=c("lightgreen", "darkgray", "lightgreen", "gray")) +
-  theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
-  ylab("") + xlab("") +
- # facet_grid(Work_Role~.) +
+  na.omit() %>% 
+  mutate(Rank = factor(Rank, levels = c("WO1 - CW5", "O1 or higher", "E1 - E9"))) %>% 
+  ggplot(aes(x=Work_Role, y=n, fill=Rank)) + 
+  geom_col() +
+  scale_fill_manual(values=c("darkgray", "skyblue", "lightgreen")) +
+    theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
+  ylab("% of Tier group") + xlab("") + ylim(0,1) +
+  facet_grid(.~Experience) +
   ggtitle("Years Experience Level by Work Role")
 
 
 #Education
 df_demographic %>% 
-  select(Work_Role, Degree) %>% 
-  group_by(Work_Role, Degree) %>%
+  mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>% 
+  select(Work_Role, Rank, Degree) %>% 
+  group_by(Work_Role, Rank, Degree) %>%
   summarise(n=n()) %>% 
   left_join(n_Tier) %>% 
   mutate(n=n/n_tot) %>% 
-  na.omit(Degree) %>% 
-  ggplot(aes(x=reorder(Degree, -n, fun=mean), y=n, fill=Work_Role, group=Work_Role)) + 
-  geom_col(position="dodge2") +
-  geom_line(aes(linetype=Work_Role)) +
-  scale_fill_manual(values=c("red", "lightblue", "lightgreen", "gray")) +
-  scale_linetype_manual(values=c("dashed", "blank", "blank", "blank")) +
+  na.omit(Degree) %>%
+  mutate(Rank = factor(Rank, levels = c("WO1 - CW5", "O1 or higher", "E1 - E9"))) %>% 
+  ggplot(aes(x=Work_Role, y=n, fill=Rank)) + 
+  geom_col() +
+ # geom_text(aes(label=round(n, 2)), position = "stack", vjust=1, size=3 ) +
+  scale_fill_manual(values=c("darkgray", "skyblue", "lightgreen")) +
   theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
-  ylab("") + xlab("") +
+  ylab("% of Tier group") + xlab("") +
+  facet_grid(.~Degree) + 
   ggtitle("Highest Education Level by Work Role")
 
 #Education CD Degrees
 df_demographic %>% 
-  select(ID, Work_Role, Bachelors_CS, Masters_CS) %>% 
+  mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>% 
+  select(ID, Work_Role, Rank, Bachelors_CS, Masters_CS) %>% 
   mutate(Bachelors_CS = if_else(Bachelors_CS=="Yes", 1, 0),
          Masters_CS = if_else(Masters_CS=="Yes", 1, 0)) %>%
   gather(Bachelors_CS:Masters_CS, key=Degree, value=n) %>% 
-  group_by(Work_Role, Degree) %>%
+  group_by(Work_Role, Rank, Degree) %>%
   summarise(n=sum(n)) %>% 
   left_join(n_Tier) %>% 
   mutate(n=n/n_tot) %>% 
-  ggplot(aes(x=Degree, y=n, fill=Work_Role)) + 
+  mutate(Rank = factor(Rank, levels = c("WO1 - CW5", "O1 or higher", "E1 - E9"))) %>% 
+  ggplot(aes(x=Work_Role, y=n, fill=Rank)) + 
   geom_col() +
-  scale_fill_manual(values=c("red", "lightblue", "lightgreen", "gray")) +
+  scale_fill_manual(values=c("darkgray", "skyblue", "lightgreen")) +
   theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
   ylab("% of Tier group") + xlab("") +
-  facet_grid(.~Work_Role) +
+  facet_grid(.~Degree) +
   ggtitle("CS Degrees by Work Role")
 
 #Certifications
 df_demographic %>% 
+  mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>% 
             select(ID, Work_Role, OSCP:`Security`) %>%
             gather(OSCP:`Security`, key=Cert, value=n) %>% 
             mutate(n=if_else(n=="Yes", 1, 0)) %>% 
@@ -79,29 +89,33 @@ df_demographic %>%
   geom_point(size=2) +
   geom_line(aes(linetype=Work_Role)) +
   scale_color_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
-  scale_linetype_manual(values=c("dashed", "blank", "blank", "blank")) +
+  scale_linetype_manual(values=c("dashed", "dashed", "blank", "blank")) +
   theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
-  ylab("percentage of respondents") + xlab("") +
+  ylab("% of Tier group") + xlab("") +
   coord_flip() +
   ggtitle("Certifications by Work Role") +
   ggsave("Certifications.jpg", width = 4, height = 6, units = "in" )
             
 #GT Score
 df_demographic %>% 
-            select (ID, Work_Role, GTScore) %>% 
-  group_by(Work_Role, GTScore) %>% summarise(n=n()) %>% 
+  mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>% 
+            select (ID, Rank, Work_Role, GTScore) %>% 
+  group_by(Work_Role, Rank, GTScore) %>% summarise(n=n()) %>% 
   left_join(n_Tier) %>% 
   mutate(n= n/n_tot) %>% 
-  ggplot(aes(x=GTScore, y=n, fill=Work_Role)) + 
-  geom_col (position = "dodge2") +
-  scale_fill_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
+  mutate(Rank = factor(Rank, levels = c("WO1 - CW5", "O1 or higher", "E1 - E9"))) %>% 
+  ggplot(aes(x=Work_Role, y=n, fill=Rank)) + 
+  geom_col() +
+  scale_fill_manual(values=c("darkgray", "skyblue", "lightgreen")) +
   #facet_grid(Work_Role~.) +   
   theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
-  ylab("percentage of respondents") + xlab("") +
+  ylab("% of Tier group") + xlab("") +
+  facet_grid(.~GTScore) +
   ggtitle("GT Score Categories by Work Role")
 
 #Hobbies
 df_hobbies <- df_demographic %>% 
+  mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>% 
   select (ID, Work_Role, BuiltCPU, Gaming, Edit_game, Scripts, SOHO, Hexidecimal) %>%
   gather(BuiltCPU:Hexidecimal, key="Hobby", value="Response") 
 df_hobbies$Response <- replace_na(df_hobbies$Response, "No")
@@ -112,12 +126,12 @@ df_hobbies %>%
   left_join(n_Tier) %>% 
   mutate(Response = Response/n_tot) %>% 
   ggplot(aes(x=reorder(Hobby, Response, FUN=mean), y=Response, color=Work_Role, group=Work_Role)) + 
-  geom_point(size=2) +
+  geom_point(size=3) +
   geom_line(aes(linetype=Work_Role)) +
   scale_color_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
-  scale_linetype_manual(values=c("dashed", "blank", "blank", "blank")) +
+  scale_linetype_manual(values=c("dashed", "dashed", "blank", "blank")) +
   theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
-  ylab("percent of respondents") +
+  ylab("% of Tier group") +
   xlab("") +
   ylim(0,1) +
   coord_flip() + ggsave("Hobbies.jpg", width = 4, height = 6, units = "in" )
@@ -125,6 +139,7 @@ df_hobbies %>%
 #Hobbies2
 df_demographic %>% 
   select(ID, Work_Role, CPU_OS, Game_Platform, Game_type) %>% 
+  mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>% 
   gather(CPU_OS:Game_type, key=Category, value=Response) %>%
   group_by(Work_Role, Category, Response) %>% 
   summarise(n=n()) %>% 
@@ -133,10 +148,11 @@ df_demographic %>%
   na.omit(Response) %>% 
   ggplot(aes(x=reorder(Response, n, FUN=mean), y=n, fill=Work_Role)) + 
   geom_col(position="dodge2") + 
-  facet_grid(Category~., scales = "free_y") + 
-  theme(legend.position = "top") +
+  scale_fill_manual(values=c("red", "skyblue", "lightgreen", "gray")) +
+  facet_grid(Category~Work_Role, scales = "free_y") + 
+  theme(legend.position = "blank") +
   xlab("") +
-  ylab("percent of respondents") +
+  ylab("% of Tier group") +
   ggtitle("Gaming and computer system preferences (all Tier categories)") +
   coord_flip() 
 

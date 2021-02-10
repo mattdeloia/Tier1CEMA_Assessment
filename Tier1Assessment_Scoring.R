@@ -101,9 +101,9 @@ df_preprocess <- read_xlsx(file) %>%
 
 #Replace Work roles with simple categories
 df_preprocess$Work_Role <-  gsub("Tier-1 - Remote Operator|Tier-1 - Capability Developer|Tier-1 - Exploitation Analyst", "Tier_1", df_preprocess$Work_Role)
-df_preprocess$Work_Role <-  gsub("Tier 2- Data Architect, Network Analyst, System Analyst [(]All Master Proficiency level only[)]", "Tier_Other", df_preprocess$Work_Role)
-df_preprocess$Work_Role <-  gsub("Tier 3- Other work role directly assigned to a Cyber Mission Force Team", "Tier_Other", df_preprocess$Work_Role)
-df_preprocess$Work_Role <-  gsub("Tier 4 -  Other authorized cyber work role|I am currently not assigned a cyber work role or I am assigned as a student", "Tier_Other", df_preprocess$Work_Role)
+df_preprocess$Work_Role <-  gsub("Tier 2- Data Architect, Network Analyst, System Analyst [(]All Master Proficiency level only[)]", "Tier_2", df_preprocess$Work_Role)
+df_preprocess$Work_Role <-  gsub("Tier 3- Other work role directly assigned to a Cyber Mission Force Team", "Tier_3", df_preprocess$Work_Role)
+df_preprocess$Work_Role <-  gsub("Tier 4 -  Other authorized cyber work role|I am currently not assigned a cyber work role or I am assigned as a student", "Tier_4", df_preprocess$Work_Role)
 df_preprocess$Bachelors_CS <- replace_na(df_preprocess$Bachelors_CS, "No")
 df_preprocess$Masters_CS <- replace_na(df_preprocess$Masters_CS, "No")
 df_preprocess$Degree <- gsub("Bachelor's Degree [(]4 year[)]", "Bachelors", df_preprocess$Degree)
@@ -203,7 +203,7 @@ easy_mean <- mean(easy_mean$Mean, na.rm = TRUE)
 #Imputation of mean values for personality items by work role   
 df_rawscore2_a <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_1" ) ) %>% 
   mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), median(.x, na.rm = TRUE), .x)) 
-df_rawscore2_b <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_Other"))  %>% 
+df_rawscore2_b <- df_rawscore2 %>% filter (Work_Role %in% c("Tier_2", "Tier_3", "Tier_4"))  %>% 
   mutate_at(vars(Q1_A_1:Q21_A_16),~ifelse(is.na(.x), median(.x, na.rm = TRUE), .x))        
 df_rawscore3 <- rbind(df_rawscore2_a, df_rawscore2_b) #bind together the Tier 1 and the Tier 2/3/4 dataframes
 
@@ -310,6 +310,7 @@ scores
 #Scoring Personality: average response on likert scale
 #Scoring Cognitive Test: percent correct by test type
 df_scored <- df_rawscore4 %>% 
+  mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>%
         group_by (ID) %>% 
         mutate(
         Problem_Solving = mean(c(Q1_A_1, Q1_A_2, Q1_A_3, Q1_A_4, Q1_A_5), na.rm = TRUE),
@@ -391,6 +392,7 @@ df_scored %>% filter(Miss_C<miss_limit) %>% select(ID, Analogies:Cog_tot)  %>%
         ggtitle("Boxplot: Scores by Cognitive Test Type") +
         ggsave("Cognitive_RawScores.jpg", width = 10, height = 6, units = "in" ) #save to folder
 
+
 #Correlation Plot of Personality Dimensions
 dfcorrplot <-  df_scored %>%  #dataframe of select features in a matrix
         filter(Miss_P<miss_limit) %>% 
@@ -470,7 +472,7 @@ df_scored3_summary %>% left_join(df_scored3_order)  %>%
         coord_flip() + xlab(" ") + ylab("overall proficiency & test mean scaled score ") +
         scale_color_manual(values=c("red", "darkgray", "darkgray", "darkgray")) +
         theme(legend.title= element_text(color="black", size=10), legend.position = "top") +
-        ylim(-1.5,1.5) +
+        ylim(-2.5,2.5) +
         ggtitle("Cognitive Scores by Work Role") +
         ggsave("CognitveScores_WorkRole.jpg", width = 10, height = 6, units = "in" ) #save to folder
 
