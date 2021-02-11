@@ -223,27 +223,27 @@ df_rawscore2 %>%
   mutate(FilterIn = if_else(Miss_P<=.20, "Y", "N")) %>%
   group_by(Work_Role, FilterIn, Miss_P) %>% summarise(count=n())
 
-#Partial Credit Model for scoring personality items
-#df_test_pcm <- read_xlsx("TestMatrix.xlsx")
-df_rawscore_PCM  <- df_rawscore4 %>% select(Q21_A_1:Q21_A_15)
-df_rawscore_PCM2 <- df_rawscore4 %>% select(Q1_A_1:Q21_A_15) %>% rbind(df_rawscore_PCM)
-  
-PC_data <- (df_rawscore_PCM-1) %>% as.matrix()
-summary(PC_data)
-PC_model <- PCM(PC_data)
-summary(PC_model)
-  
-### Examine item difficulty values:
-item.estimates <- thresholds(PC_model)
-item.estimates
-
-# Standard errors for theta estimates:
-person.locations.estimate <- person.parameter(PC_model)
-summary(person.locations.estimate)
-
-# Build a table for person locations
-person_theta <- person.locations.estimate$theta.table
-person_theta
+# #Partial Credit Model for scoring personality items
+# #df_test_pcm <- read_xlsx("TestMatrix.xlsx")
+# df_rawscore_PCM  <- df_rawscore4 %>% select(Q21_A_1:Q21_A_15)
+# df_rawscore_PCM2 <- df_rawscore4 %>% select(Q1_A_1:Q21_A_15) %>% rbind(df_rawscore_PCM)
+#   
+# PC_data <- (df_rawscore_PCM-1) %>% as.matrix()
+# summary(PC_data)
+# PC_model <- PCM(PC_data)
+# summary(PC_model)
+#   
+# ### Examine item difficulty values:
+# item.estimates <- thresholds(PC_model)
+# item.estimates
+# 
+# # Standard errors for theta estimates:
+# person.locations.estimate <- person.parameter(PC_model)
+# summary(person.locations.estimate)
+# 
+# # Build a table for person locations
+# person_theta <- person.locations.estimate$theta.table
+# person_theta
 
 #Rasch scoring and analysis of 25 cognitive questions
 df_Rasch <- df_rawscore2 %>% 
