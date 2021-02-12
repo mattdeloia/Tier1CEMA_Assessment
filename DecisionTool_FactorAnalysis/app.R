@@ -208,7 +208,9 @@ df_infreq <-
     group_by(ID)  %>% 
     summarise(infreq= abs(easy_mean-mean(Score, na.rm = TRUE))) #lower infreq is better  
 
-df_rawscore3 <- df_rawscore2 %>% left_join(df_infreq, by="ID")
+df_rawscore3 <- df_rawscore2 %>% 
+  left_join(df_infreq, by="ID") %>% 
+  mutate(Survey_Completion = if_else(Miss_C<.20 & Miss_P <.20 & sincere<5 & infreq<1, "Yes", "No"))
 
 #Scoring Cognitive Test: percent correct by test type
 df_scored <- df_rawscore3 %>% 
@@ -346,29 +348,34 @@ p_value <- function(x, personalitytrait, missingness, infrequency) {
             calculate (stat = "diff in means", order = c("Tier_1", "Tier_Other")))>0, "right", "left"))
 }
 
-demo_plot <- function (x, category) {
-  df_preprocess %>% 
+
+demo_plot <- function (x, category, category2) {
+  df_rawscore3 %>% 
     mutate(Prior_Tier1 = replace_na(Prior_Tier1, "No")) %>% 
     group_by(ID) %>% 
     mutate(Work_Role = if_else(x =="Yes", if_else(Prior_Tier1 =="Yes", "Tier_1", Work_Role), Work_Role)) %>% 
     mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>% 
-  select(Work_Role, Rank, Experience:Masters_CS,GTScore ) %>%
+  select(Work_Role,Survey_Completion, Rank, Experience:Masters_CS,GTScore ) %>%
     gather(Experience:GTScore, key=Category, value=Response) %>% 
-  group_by(Work_Role, Rank, Category, Response) %>%
+    gather(Work_Role:Survey_Completion, key=Category2, value=Response2) %>% 
+    filter(Category2 == category2) %>%
+    group_by(Response2, Rank, Category, Response) %>%
   summarise(n=n()) %>% 
-  filter(Category == category) %>% 
+    filter(Category == category) %>% 
   left_join(
-    df_preprocess %>% 
+    df_rawscore3 %>% 
       mutate(Prior_Tier1 = replace_na(Prior_Tier1, "No")) %>% 
       group_by(ID) %>% 
       mutate(Work_Role = if_else(x =="Yes", if_else(Prior_Tier1 =="Yes", "Tier_1", Work_Role), Work_Role)) %>% 
       mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>% 
-      group_by(Work_Role) %>%
+      gather(Work_Role:Survey_Completion, key=Category2, value=Response2) %>% 
+      filter(Category2 == category2) %>% 
+      group_by(Response2) %>%
       summarise(n_tot=n())) %>% 
   mutate(n=n/n_tot) %>% 
   na.omit() %>% 
   mutate(Rank = factor(Rank, levels = c("WO1 - CW5", "O1 or higher", "E1 - E9"))) %>% 
-  ggplot(aes(x=Work_Role, y=n, fill=Rank)) + 
+  ggplot(aes(x=Response2, y=n, fill=Rank)) + 
   geom_col() +
   scale_fill_manual(values=c("darkgray", "skyblue", "lightgreen")) +
   theme(legend.title= element_text(color="black", size=12), legend.position = "top", axis.text = element_text(size=14),
@@ -380,17 +387,17 @@ demo_plot <- function (x, category) {
 }
 
 CS_plot <- function(x) {
-    df_preprocess %>% 
-      mutate(Prior_Tier1 = replace_na(Prior_Tier1, "No")) %>% 
-      group_by(ID) %>% 
-      mutate(Work_Role = if_else(x =="Yes", if_else(Prior_Tier1 =="Yes", "Tier_1", Work_Role), Work_Role)) %>% 
-      mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>%  
-      select(ID, Work_Role, Rank, Bachelors_CS, Masters_CS) %>% 
-      mutate(Bachelors_CS = if_else(Bachelors_CS=="Yes", 1, 0),
-             Masters_CS = if_else(Masters_CS=="Yes", 1, 0)) %>%
-      gather(Bachelors_CS:Masters_CS, key=Category, value=n) %>% 
-      group_by(Work_Role, Rank, Category) %>%
-      summarise(n=sum(n)) %>% 
+  df_preprocess %>% 
+    mutate(Prior_Tier1 = replace_na(Prior_Tier1, "No")) %>% 
+    group_by(ID) %>% 
+    mutate(Work_Role = if_else(x =="Yes", if_else(Prior_Tier1 =="Yes", "Tier_1", Work_Role), Work_Role)) %>% 
+    mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>%  
+    select(ID, Work_Role, Rank, Bachelors_CS, Masters_CS) %>% 
+    mutate(Bachelors_CS = if_else(Bachelors_CS=="Yes", 1, 0),
+           Masters_CS = if_else(Masters_CS=="Yes", 1, 0)) %>%
+    gather(Bachelors_CS:Masters_CS, key=Category, value=n) %>% 
+    group_by(Work_Role, Rank, Category) %>%
+    summarise(n=sum(n)) %>% 
     left_join(
       df_preprocess %>% 
         mutate(Prior_Tier1 = replace_na(Prior_Tier1, "No")) %>% 
@@ -399,19 +406,20 @@ CS_plot <- function(x) {
         mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>% 
         group_by(Work_Role) %>%
         summarise(n_tot=n())) %>%  
-      mutate(n=n/n_tot) %>% 
-      na.omit() %>% 
-      mutate(Rank = factor(Rank, levels = c("WO1 - CW5", "O1 or higher", "E1 - E9"))) %>% 
-      ggplot(aes(x=Work_Role, y=n, fill=Rank)) + 
-      geom_col() +
-      scale_fill_manual(values=c("darkgray", "skyblue", "lightgreen")) +
-      theme(legend.title= element_text(color="black", size=12), legend.position = "top", axis.text = element_text(size=14),
-            axis.title = element_text(size=14),
-            legend.text = element_text(size=14),
-            strip.text = element_text(size=14, color="blue"))+
-      ylab("% of Tier group") + xlab("") + ylim(0,1) +
-      facet_grid(.~Category)
-  }
+    mutate(n=n/n_tot) %>% 
+    na.omit() %>% 
+    mutate(Rank = factor(Rank, levels = c("WO1 - CW5", "O1 or higher", "E1 - E9"))) %>% 
+    ggplot(aes(x=Work_Role, y=n, fill=Rank)) + 
+    geom_col() +
+    scale_fill_manual(values=c("darkgray", "skyblue", "lightgreen")) +
+    theme(legend.title= element_text(color="black", size=12), legend.position = "top", axis.text = element_text(size=14),
+          axis.title = element_text(size=14),
+          legend.text = element_text(size=14),
+          strip.text = element_text(size=14, color="blue"))+
+    ylab("% of Tier group") + xlab("") + ylim(0,1) +
+    facet_grid(.~Category)
+}
+
  
 
 # Define UI for application that draws a histogram
@@ -429,7 +437,8 @@ ui <- navbarPage(
                         box(title="Work Role by Rank", status="primary", solidHeader = TRUE, width = 4,
                             gt_output("ranktable"), br(), br(),
                             radioButtons("priortier", label = "Include Prior Tier 1 with Tier 1 group?", choices = list("Yes", "No"), selected = "No"),
-                            radioButtons("demo_category", label = "Demographic Plots", choices = list("Experience" , "Degree", "GTScore"))),
+                            radioButtons("demo_category", label = "Demographic Plots", choices = list("Experience" , "Degree", "GTScore")),
+                            radioButtons("facet_category", label = "Facet variable", choices = list ("Work_Role", "Survey_Completion"))),
                         
                         box(title="Demographic Plot", status="primary", solidHeader = TRUE, width = 8,
                             plotOutput("demographicplot", height = "600px"), height = "700px" )
@@ -473,7 +482,8 @@ ui <- navbarPage(
                
             sidebarPanel(
            
-              radioButtons("priorTier", label = "Include Prior Tier 1 with Tier 1 group?", choices = list("Yes", "No"), selected = "No"),   
+              radioButtons("priorTier", label = "Include Prior Tier 1 with Tier 1 group?", choices = list("Yes", "No"), selected = "No"),
+              radioButtons("scale", label = "Scale data?", choices = list("Yes", "No"), selected = "No"), 
               gt_output("table"),
                  
            
@@ -654,11 +664,14 @@ server <- function(input, output) {
   
   
   #Experience
-  output$demographicplot <- renderPlot({demo_plot(input$priortier, input$demo_category)})
+  output$demographicplot <- renderPlot({
+    demo_plot(input$priortier, input$demo_category, input$facet_category)
+    })
   
   #CS Degrees
   
-  output$csplot <- renderPlot({CS_plot(input$priortier)
+  output$csplot <- renderPlot({
+    CS_plot(input$priortier)
     })
   
   
@@ -697,8 +710,6 @@ server <- function(input, output) {
     coord_flip() 
   })
   
-  
-
   #Hobbies
   output$hobbies <- renderPlot ({
     df_preprocess %>% 
@@ -1088,8 +1099,8 @@ server <- function(input, output) {
          mutate(Work_Role = if_else(Work_Role =="Tier_2"|Work_Role=="Tier_3"|Work_Role=="Tier_4", "Tier_Other", Work_Role)) %>%
          ungroup() %>% 
        filter(Miss_P <input$miss_limit, infreq<input$infreq_limit) %>% 
-       dplyr::select(ID, Work_Role, Problem_Solving:Tolerance) %>% 
-       mutate_at(vars(Problem_Solving:Tolerance), scale) %>% #scale function
+       dplyr::select(ID, Duration_min, Work_Role, Problem_Solving:Tolerance) %>% 
+      mutate_at(if_else(input$scale=="Yes", vars(Problem_Solving:Tolerance),vars(Duration_min )), scale) %>% #scale function
        gather(Problem_Solving:Tolerance, key=Dimension, value=Score) %>% 
         summarySE(groupvars = c("Work_Role", "Dimension"), measurevar = "Score", na.rm = TRUE)
      })
@@ -1116,8 +1127,7 @@ server <- function(input, output) {
        theme(legend.title= element_text(color="black", size=12), legend.position = "top", axis.text = element_text(size=14),
               axis.title = element_text(size=14),
               legend.text = element_text(size=14),
-              strip.text = element_text(size=14, color="blue"))+
-       ylim(-2,2) 
+              strip.text = element_text(size=14, color="blue"))
      })
 
      
