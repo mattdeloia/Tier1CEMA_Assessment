@@ -12,7 +12,7 @@ library(readxl)
 library(gt)
 
 #Remove rows with missing values and keep only complete cases
-efa_data <- df_rawscore4 %>% select(Q1_A_1:Q21_A_15)
+efa_data <- df_rawscore3 %>% select(Q1_A_1:Q21_A_15)
 
 efa_data %>% rownames_to_column ("ID") %>% count ()
 
@@ -156,7 +156,7 @@ df_efa %>%
     title=md("Table of Scales and Items for Revised Questionnaire") )
                       
 #missingness plot
-df_rawscore4 %>% 
+df_rawscore3 %>% 
   mutate(FilterIn = if_else(Miss_P<=miss_limit, "Y", "N")) %>%
   ggplot() +
   geom_histogram(aes(x=Miss_P, fill=FilterIn )) +

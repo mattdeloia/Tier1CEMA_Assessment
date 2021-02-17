@@ -43,7 +43,7 @@ likertNum <- function(x){
     case_when(
         x == "Very Accurate" ~ 5, #Likert Scale 1 begin
         x == "Moderately Accurate" ~ 4,
-        x == "Neither Accurate Nor Inaccurate" ~ 3,
+        x == "Neither Accurate nor Inaccurate" ~ 3,
         x == "Moderately Inaccurate" ~ 2,
         x == "Very Inaccurate" ~ 1,  #Likert Scale 1 end
         x == "Strongly Agree" ~ 5, #Likert Scale 2 begin
