@@ -508,3 +508,36 @@ randforest_report2 <-   rownames_to_column(randforest_report, var="Feature") %>%
 
 # model_crossvalid <- train(Work_Role ~ ., data = df_randomforest, method="rf", trControl = trainControl(method ="cv", number = 5, verboseIter=TRUE))
 #model_crossvalid
+
+
+
+# Variable Selection using k-NN model
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+# train the model
+model <- train(Heart_Attack_Diagnosis~., data=training, method="knn", preProcess="scale", trControl=control)
+# estimate variable importance
+importance <- varImp(model, scale=FALSE)
+# summarize importance
+print(importance)
+# plot importance
+plot(importance)
+
+# k-nn implementation with all the numeric predictor features initially selected without variable selection
+# The tuneLength parameter tells the algorithm to try different default values for the main parameter
+
+
+
+set.seed(400)
+ctrl <- trainControl(method="repeatedcv",repeats = 3) 
+knnFit <- train( Heart_Attack_Diagnosis~ ., data = training, method = "knn", trControl = ctrl, preProcess = c("center","scale"), tuneLength = 20)
+
+#Output of kNN fit
+knnFit
+
+plot(knnFit)
+
+knnPredict <- predict(knnFit,newdata = testing )
+#Get the confusion matrix to see accuracy value and other parameter values
+confusionMatrix(knnPredict, testing$Heart_Attack_Diagnosis )
+
+mean(knnPredict == testing$Heart_Attack_Diagnosis)
