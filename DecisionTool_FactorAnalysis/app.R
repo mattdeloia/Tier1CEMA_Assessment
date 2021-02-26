@@ -144,7 +144,7 @@ df_rawscore <- df_preprocess %>%
         `3D_Q16` = if_else(`3D_Q16` =="E", 1, 0), #score cognitive questions according to scoring key from ICAR
         `3D_Q24` = if_else(`3D_Q24` == "C", 1, 0),
         `3D_Q29` = if_else(`3D_Q29` == "F", 1, 0),
-        `3D_Q42` = if_else(`3D_Q42` == "F", 1, 0),
+        `3D_Q42` = if_else(`3D_Q42` == "E", 1, 0),
         `3D_Q58` = if_else(`3D_Q58` == "C", 1, 0),
         Analogies_Q14 = if_else(Analogies_Q14 == "C", 1, 0),
         Analogies_Q25 = if_else(Analogies_Q25 == "A", 1, 0),
@@ -1011,12 +1011,7 @@ server <- function(input, output) {
                 subtitle = "#Scales with Group Difference",
                 color=if_else(stat_test() %>% filter(p<input$alpha) %>% count() >= 3, "lime", if_else(stat_test() %>% filter(p<input$alpha) %>% count()>= 1, "green", "red")) )
         })
-     
-
-
-     
    
-     
      #Random Forest Modeling
      df_model <- reactive({
        df_rawscore3 %>% 
